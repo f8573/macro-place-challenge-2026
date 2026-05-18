@@ -1,0 +1,6 @@
+{
+  "description": "Golden baseline proxy costs, M1 shelf-pack placer, all IBM ICCAD04 testcases",
+  "placer_version": "M1-shelf-pack",
+  "avg_proxy_cost": 2.2109,
+  "note": "Computed with live plc against all IBM testcases. Individual per-benchmark costs require the submodule. Update this file only after a full evaluator run."
+}
