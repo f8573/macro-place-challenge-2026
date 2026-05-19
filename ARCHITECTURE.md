@@ -4,9 +4,27 @@
 
 This solver is a modular macro placement submission for the Partcl/HRT Macro Placement Challenge.
 
-The immediate goal is M1 Infrastructure: produce a valid baseline placement, with clean wrappers for validation, scoring, visualization, scripts, and tests.
+Milestone 1 infrastructure is complete and hardened.
 
-M1 should not attempt serious optimization.
+The current active milestone is:
+
+```text
+M2A — Hypergraph Extraction and Spectral Diagnostics
+```
+
+M2A should prove that the solver can:
+
+- extract macro-net connectivity from the official `Benchmark`
+- build a weighted sparse macro graph
+- construct a Laplacian
+- compute diagnostic spectral embeddings
+
+M2A should not attempt:
+
+- final placement optimization
+- legalization
+- candidate ranking
+- official `placer.py` integration
 
 ---
 
@@ -28,12 +46,14 @@ Coordinates are macro centers in microns.
 
 Requirements:
 
-* one row per macro
-* fixed macros preserved
-* soft macros unchanged in M1
-* no hard-macro overlaps
-* finite coordinates
-* in bounds
+- one row per macro
+- fixed macros preserved
+- soft macros unchanged unless a later milestone explicitly handles them
+- no hard-macro overlaps for final/evaluated placements
+- finite coordinates
+- in bounds
+
+M2A must not change official `placer.py` behavior except for tiny evaluator import-boundary fixes if required.
 
 ---
 
@@ -51,6 +71,8 @@ top    = y + height / 2
 Touching edges are legal and are not overlaps.
 
 Lower-left coordinates may only appear at adapter or visualization boundaries.
+
+M2A spectral coordinates are diagnostic embedding coordinates, not legal placement coordinates.
 
 ---
 
@@ -79,11 +101,33 @@ viz/
   visualization wrappers only
 
 scripts/
-  smoke, inspect, and sweep commands
+  smoke, inspect, and diagnostic commands
 
 tests/
   focused deterministic tests
 ```
+
+---
+
+## M2A Module Additions
+
+M2A may add:
+
+```text
+core/hypergraph.py
+core/laplacian.py
+core/spectral.py
+
+scripts/inspect_spectral_graph.py
+
+tests/test_hypergraph.py
+tests/test_laplacian.py
+tests/test_spectral.py
+```
+
+These modules are diagnostic infrastructure only.
+
+They should not modify official placement behavior.
 
 ---
 
@@ -93,9 +137,9 @@ Reuse official challenge utilities where practical.
 
 Use:
 
-* `macro_place.utils` for validation
-* `macro_place.objective` for proxy scoring
-* official visualization helpers where suitable
+- `macro_place.utils` for validation
+- `macro_place.objective` for proxy scoring
+- official visualization helpers where suitable
 
 Do not modify official evaluator/scoring behavior.
 
@@ -103,28 +147,58 @@ Do not duplicate evaluator semantics unless the local version is clearly marked 
 
 ---
 
-## Milestone Boundary
+## Current Milestone Boundary
 
-M1 may implement:
+Current active milestone:
 
-* thin baseline `placer.py`
-* benchmark inspection helpers
-* geometry helpers
-* validation/scoring wrappers
-* artifact logging
-* visualization wrappers
-* smoke scripts
-* focused tests
+```text
+M2A — Hypergraph Extraction and Spectral Diagnostics
+```
 
-M1 must not implement:
+M2A may implement:
 
-* spectral placement
-* analytical optimization
-* RUDY
-* LNS
-* simulated annealing
-* learned policies
-* benchmark-specific hardcoded placements
+- hypergraph/net extraction helpers
+- normalized clique expansion
+- sparse adjacency construction
+- Laplacian construction
+- connected-component diagnostics
+- diagnostic eigensolve wrappers
+- graph/spectral inspection scripts
+- focused deterministic graph/spectral tests
+
+M2A must not implement:
+
+- full spectral candidate generation
+- official `placer.py` behavior changes
+- legalization
+- overlap repair
+- analytical optimization
+- RUDY
+- LNS
+- coordinate descent
+- simulated annealing
+- learned policies
+- benchmark-specific hardcoding
+
+M1 baseline behavior and regression tests must continue to pass.
+
+---
+
+## M2A Design Constraints
+
+The official `Benchmark` remains the source of truth.
+
+Do not introduce large duplicate models such as:
+
+- `Macro`
+- `Pin`
+- `Net`
+- `Placement`
+- `BenchmarkData`
+
+Use small helper types only when they reduce ambiguity.
+
+M2A graph/eigen outputs are diagnostics. They are not final placements.
 
 ---
 
@@ -135,3 +209,5 @@ M1 must not implement:
 3. Challenge API assumptions stay near `benchmark_adapter.py`.
 4. Official scoring remains the source of truth.
 5. Local fallback metrics are debug-only.
+6. M2A begins with normalized clique expansion only.
+7. Star expansion, hybrid expansion, candidate variants, and legalization are deferred.
