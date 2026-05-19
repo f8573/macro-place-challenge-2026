@@ -25,7 +25,7 @@ def macro_net_members(benchmark: Benchmark) -> List[Tuple[torch.Tensor, float]]:
     n_hard = benchmark.num_hard_macros
     result: List[Tuple[torch.Tensor, float]] = []
     for ni, nodes in enumerate(benchmark.net_nodes):
-        hard_pins = nodes[nodes < n_hard]
+        hard_pins = torch.unique(nodes[nodes < n_hard], sorted=True)
         if hard_pins.numel() >= 2:
             w = float(benchmark.net_weights[ni].item())
             result.append((hard_pins, w))
@@ -40,7 +40,7 @@ def extract_macro_nets(
     n_hard = benchmark.num_hard_macros
     macro_nets: List[tuple[int, ...]] = []
     for nodes in benchmark.net_nodes:
-        hard_pins = nodes[nodes < n_hard]
+        hard_pins = torch.unique(nodes[nodes < n_hard], sorted=True)
         if hard_pins.numel() >= min_pins:
             macro_nets.append(tuple(int(pin) for pin in hard_pins.tolist()))
     return macro_nets

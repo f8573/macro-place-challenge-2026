@@ -115,6 +115,25 @@ def test_members_all_soft_macro_nets():
     assert macro_net_members(bm) == []
 
 
+def test_members_deduplicates_duplicate_pins():
+    # net [1, 1, 2] should deduplicate to {1, 2}
+    bm = _make_benchmark(n_hard=3, net_nodes=[[1, 1, 2]])
+    members = macro_net_members(bm)
+    assert len(members) == 1
+    pins, _ = members[0]
+    assert set(pins.tolist()) == {1, 2}
+    assert pins.numel() == 2
+
+
+def test_members_drops_net_with_only_duplicate_pin():
+    # net [3, 3] -> dedup -> [3] -> fanout 1 -> omitted
+    bm = _make_benchmark(n_hard=4, net_nodes=[[3, 3], [0, 1]])
+    members = macro_net_members(bm)
+    assert len(members) == 1
+    pins, _ = members[0]
+    assert set(pins.tolist()) == {0, 1}
+
+
 # ---------------------------------------------------------------------------
 # clique_adjacency - structure
 # ---------------------------------------------------------------------------
@@ -185,6 +204,18 @@ def test_clique_adj_nonuniform_weights():
     assert adj[0, 1] == pytest.approx(3.0)
     assert adj[1, 2] == pytest.approx(0.5)
     assert adj[0, 2] == pytest.approx(0.0)
+
+
+def test_clique_adj_no_self_loops_with_duplicate_pins():
+    # net [0, 0, 1, 2] -> dedup -> [0, 1, 2], k=3, each edge weight = 1/(3-1) = 0.5
+    import numpy as np
+
+    bm = _make_benchmark(n_hard=3, net_nodes=[[0, 0, 1, 2]], net_weights=[1.0])
+    adj = clique_adjacency(bm)
+    assert np.allclose(adj.diagonal(), 0.0), "diagonal must be zero (no self-loops)"
+    assert adj[0, 1] == pytest.approx(0.5)
+    assert adj[0, 2] == pytest.approx(0.5)
+    assert adj[1, 2] == pytest.approx(0.5)
 
 
 def test_clique_adj_non_negative():
