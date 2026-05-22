@@ -88,15 +88,38 @@ def _apply_transform(
 
 
 # ---------------------------------------------------------------------------
-# A. Original candidate
+# A. Original candidates
 # ---------------------------------------------------------------------------
 
 
-def _original_candidate(benchmark: Benchmark) -> CandidatePlacement:
+def _original_raw_candidate(benchmark: Benchmark) -> CandidatePlacement:
+    """Raw benchmark positions, bypassing the legalizer entirely.
+
+    This is the primary 'original' candidate. Validation and scoring run
+    directly on the input positions. If the benchmark's initial.plc
+    placement is valid, it will score as-is and set the quality baseline.
+    """
     return CandidatePlacement(
-        name="original",
+        name="original_raw",
         family="original",
         positions=benchmark.macro_positions.clone().float(),
+        bypass_legalization=True,
+    )
+
+
+def _original_legalized_candidate(benchmark: Benchmark) -> CandidatePlacement:
+    """Benchmark positions passed through the legalizer.
+
+    Included for diagnostics: shows what the greedy legalizer does to the
+    initial placement. With the no-op shortcut, this equals original_raw
+    whenever the input is already valid. Only selectable when original_raw
+    is invalid.
+    """
+    return CandidatePlacement(
+        name="original_legalized",
+        family="original",
+        positions=benchmark.macro_positions.clone().float(),
+        bypass_legalization=False,
     )
 
 
@@ -495,8 +518,9 @@ def generate_candidates(
 
     candidates: List[CandidatePlacement] = []
 
-    # A. Original (always first)
-    candidates.append(_original_candidate(benchmark))
+    # A. Original candidates: raw first (bypass legalizer), legalized second (diagnostic).
+    candidates.append(_original_raw_candidate(benchmark))
+    candidates.append(_original_legalized_candidate(benchmark))
 
     # B. Area/degree
     try:

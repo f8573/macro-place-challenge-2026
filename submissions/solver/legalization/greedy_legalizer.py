@@ -40,6 +40,75 @@ class LegalizationResult:
     total_move: float
     runtime_ms: float
     messages: List[str] = field(default_factory=list)
+    no_op: bool = False       # True when input was already valid; positions returned unchanged.
+
+
+_OV_TOL = 1e-4  # µm — same tolerance as diagnostics.check_placement
+
+
+def _is_already_valid(
+    out_np: np.ndarray,      # (N, 2) float64 all positions
+    ws: np.ndarray,          # (N,) float64 widths
+    hs: np.ndarray,          # (N,) float64 heights
+    movable_indices: np.ndarray,  # (M,) int
+    fixed_indices: np.ndarray,    # (F,) int
+    canvas_w: float,
+    canvas_h: float,
+) -> bool:
+    """Return True if all movable macros are valid (in-bounds, no overlaps).
+
+    Checks:
+      - each movable macro is fully inside [0, canvas_w] x [0, canvas_h]
+      - no movable-vs-movable overlap (strict: touching edges are legal)
+      - no movable-vs-fixed overlap
+
+    Uses the same _OV_TOL tolerance as diagnostics.check_placement so that
+    touching-edge placements never spuriously trigger legalization.
+    """
+    if len(movable_indices) == 0:
+        return True
+
+    mx = out_np[movable_indices, 0]
+    my = out_np[movable_indices, 1]
+    mw = ws[movable_indices]
+    mh = hs[movable_indices]
+
+    # Bounds check: center ± half-dim must be inside canvas
+    if (mx - mw / 2.0 < -_OV_TOL).any():
+        return False
+    if (mx + mw / 2.0 > canvas_w + _OV_TOL).any():
+        return False
+    if (my - mh / 2.0 < -_OV_TOL).any():
+        return False
+    if (my + mh / 2.0 > canvas_h + _OV_TOL).any():
+        return False
+
+    # Movable-vs-movable overlap check
+    if len(movable_indices) >= 2:
+        diff_x = np.abs(mx[:, None] - mx[None, :]) * 2   # (M, M)
+        diff_y = np.abs(my[:, None] - my[None, :]) * 2
+        sum_w = mw[:, None] + mw[None, :]
+        sum_h = mh[:, None] + mh[None, :]
+        ov = (diff_x < sum_w - _OV_TOL) & (diff_y < sum_h - _OV_TOL)
+        np.fill_diagonal(ov, False)
+        if ov.any():
+            return False
+
+    # Movable-vs-fixed overlap check
+    if len(fixed_indices) > 0:
+        fx = out_np[fixed_indices, 0]
+        fy = out_np[fixed_indices, 1]
+        fw = ws[fixed_indices]
+        fh = hs[fixed_indices]
+        diff_x = np.abs(mx[:, None] - fx[None, :]) * 2   # (M, F)
+        diff_y = np.abs(my[:, None] - fy[None, :]) * 2
+        sum_w = mw[:, None] + fw[None, :]
+        sum_h = mh[:, None] + fh[None, :]
+        ov = (diff_x < sum_w - _OV_TOL) & (diff_y < sum_h - _OV_TOL)
+        if ov.any():
+            return False
+
+    return True
 
 
 def _sorted_offsets_np(max_rings: int, step: float) -> np.ndarray:
@@ -259,6 +328,18 @@ def legalize(
         return LegalizationResult(
             positions=out, valid=True, num_moved=0, max_move=0.0,
             total_move=0.0, runtime_ms=(time.perf_counter() - t0) * 1000,
+            no_op=True,
+        )
+
+    # No-op shortcut: if the placement is already valid, return it unchanged.
+    # This preserves the proxy cost of valid input placements and avoids
+    # unnecessary macro movement that degrades wirelength.
+    out_np = out.numpy().astype(np.float64)
+    if _is_already_valid(out_np, ws, hs, movable_indices, fixed_indices, canvas_w, canvas_h):
+        return LegalizationResult(
+            positions=out, valid=True, num_moved=0, max_move=0.0,
+            total_move=0.0, runtime_ms=(time.perf_counter() - t0) * 1000,
+            no_op=True,
         )
 
     # Step size: half the smallest movable dimension, at least 0.5 µm

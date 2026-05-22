@@ -38,7 +38,7 @@ class SolverPlacer:
         from core.candidate_scoring import score_and_select
 
         candidates = generate_candidates(benchmark)
-        best, _ = score_and_select(candidates, benchmark, plc=plc)
+        best, *_ = score_and_select(candidates, benchmark, plc=plc)
 
         if best is None or best.positions is None:
             # Emergency fallback: return original positions
