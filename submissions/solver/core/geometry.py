@@ -67,9 +67,22 @@ def centers_to_edges(
     return x_min, x_max, y_min, y_max
 
 
+_BOUNDS_TOL: float = 1e-3
+"""Tolerance for boundary checks (µm). Guards against float32 precision at exact boundaries."""
+
+
 def bounds_mask(
     positions: torch.Tensor, sizes: torch.Tensor, canvas_w: float, canvas_h: float
 ) -> torch.Tensor:
-    """Return bool tensor [N], True where the macro is fully within canvas bounds."""
+    """Return bool tensor [N], True where the macro is fully within canvas bounds.
+
+    A small tolerance (_BOUNDS_TOL) is applied to handle float32 rounding at
+    exact canvas edges.
+    """
     x_min, x_max, y_min, y_max = centers_to_edges(positions, sizes)
-    return (x_min >= 0.0) & (x_max <= canvas_w) & (y_min >= 0.0) & (y_max <= canvas_h)
+    return (
+        (x_min >= -_BOUNDS_TOL)
+        & (x_max <= canvas_w + _BOUNDS_TOL)
+        & (y_min >= -_BOUNDS_TOL)
+        & (y_max <= canvas_h + _BOUNDS_TOL)
+    )

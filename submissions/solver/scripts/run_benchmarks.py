@@ -89,11 +89,31 @@ def _discover_benchmarks(names: Optional[List[str]]) -> List[Path]:
     return sorted(BENCHMARKS_PT_DIR.glob("*.pt"))
 
 
+def _get_benchmark_class():
+    """Import Benchmark, bypassing __init__.py if plc_client_os is missing."""
+    try:
+        from macro_place.benchmark import Benchmark  # noqa: PLC0415
+        return Benchmark
+    except ImportError:
+        pass
+    # Fallback: load benchmark.py directly without triggering __init__.py
+    import importlib.util, types  # noqa: E401
+    spec = importlib.util.spec_from_file_location(
+        "macro_place.benchmark",
+        Path(__file__).resolve().parent.parent.parent.parent / "macro_place" / "benchmark.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    if "macro_place" not in sys.modules:
+        sys.modules["macro_place"] = types.ModuleType("macro_place")
+    sys.modules["macro_place.benchmark"] = mod
+    spec.loader.exec_module(mod)
+    return mod.Benchmark
+
+
 def _load_benchmark(pt_path: Path):
     """Load benchmark from .pt file. Returns (benchmark, plc=None)."""
     try:
-        from macro_place.benchmark import Benchmark
-
+        Benchmark = _get_benchmark_class()
         bm = Benchmark.load(str(pt_path))
         return bm, None
     except Exception as exc:

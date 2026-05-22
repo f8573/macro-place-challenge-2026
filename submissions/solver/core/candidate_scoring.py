@@ -87,7 +87,8 @@ def _process_candidate(
     benchmark: Benchmark,
     plc,
     movable_mask: torch.Tensor,
-    legalizer_max_rings: int = 80,
+    obstacle_mask: torch.Tensor,
+    legalizer_max_rings: int = 25,
 ) -> ScoredCandidate:
     """Legalize, validate, and score a single candidate."""
     t_total_start = time.perf_counter()
@@ -99,6 +100,7 @@ def _process_candidate(
         canvas_w=benchmark.canvas_width,
         canvas_h=benchmark.canvas_height,
         movable_mask=movable_mask,
+        obstacle_mask=obstacle_mask,
         max_rings=legalizer_max_rings,
     )
 
@@ -155,7 +157,7 @@ def score_and_select(
     candidates: List[CandidatePlacement],
     benchmark: Benchmark,
     plc=None,
-    legalizer_max_rings: int = 80,
+    legalizer_max_rings: int = 25,
 ) -> Tuple[ScoredCandidate, List[ScoredCandidate]]:
     """Score all candidates and return (best, ranked_list).
 
@@ -167,11 +169,14 @@ def score_and_select(
         by proxy_cost ascending (invalid candidates at the end).
     """
     movable_mask = benchmark.get_movable_mask() & benchmark.get_hard_macro_mask()
+    # Only truly fixed hard macros are obstacles; soft macros are ignored.
+    obstacle_mask = benchmark.macro_fixed & benchmark.get_hard_macro_mask()
 
     scored: List[ScoredCandidate] = []
     for c in candidates:
         sc = _process_candidate(
-            c, benchmark, plc, movable_mask, legalizer_max_rings=legalizer_max_rings
+            c, benchmark, plc, movable_mask, obstacle_mask,
+            legalizer_max_rings=legalizer_max_rings,
         )
         scored.append(sc)
 

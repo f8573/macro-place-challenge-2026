@@ -8,6 +8,7 @@ useful inside the candidate pipeline to quickly reject bad placements.
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
+import numpy as np
 import torch
 
 from submissions.solver.core.geometry import bounds_mask, centers_to_edges
@@ -66,32 +67,32 @@ def check_placement(
     if num_oob:
         msgs.append(f"{num_oob} macros out of bounds")
 
-    # Overlap check (O(n^2) but fast for n<=500)
-    x_min, x_max, y_min, y_max = centers_to_edges(positions, sizes)
-    overlap_pairs: List[Tuple[int, int]] = []
-    checked_indices = indices
+    # Fully vectorized overlap check — O(M^2) in numpy, fast for M<=2000
+    # Use float64 to avoid false positives from float32 rounding on touching edges.
+    pos_m = positions[mask].numpy().astype(np.float64)   # (M, 2)
+    sz_m = sizes[mask].numpy().astype(np.float64)        # (M, 2)
+    cx = pos_m[:, 0]
+    cy = pos_m[:, 1]
+    ws = sz_m[:, 0]
+    hs = sz_m[:, 1]
 
-    for k in range(len(checked_indices)):
-        if num_nonfinite and not torch.isfinite(positions[checked_indices[k]]).all():
-            continue
-        i = checked_indices[k]
-        for l in range(k + 1, len(checked_indices)):
-            j = checked_indices[l]
-            if num_nonfinite and not torch.isfinite(positions[j]).all():
-                continue
-            # Strict overlap: separation < 0
-            ox = x_max[i].item() - x_min[j].item()
-            ox2 = x_max[j].item() - x_min[i].item()
-            oy = y_max[i].item() - y_min[j].item()
-            oy2 = y_max[j].item() - y_min[i].item()
-            # Two rects overlap iff both projections have strictly positive overlap
-            # Touching (ox == 0) is NOT an overlap
-            if ox > 0 and ox2 > 0 and oy > 0 and oy2 > 0:
-                overlap_pairs.append((i, j))
-                if len(overlap_pairs) >= overlap_sample:
-                    break
-        if len(overlap_pairs) >= overlap_sample:
-            break
+    M = len(indices)
+    overlap_pairs: List[Tuple[int, int]] = []
+
+    _OV_TOL = 1e-4  # µm tolerance for touching-edge false positives
+
+    # (M, M) pairwise overlap matrices — upper triangle only
+    diff_x = np.abs(cx[:, None] - cx[None, :]) * 2   # (M, M)
+    diff_y = np.abs(cy[:, None] - cy[None, :]) * 2
+    sum_w = ws[:, None] + ws[None, :]
+    sum_h = hs[:, None] + hs[None, :]
+    # Strict overlap: both separations are negative (touching = 0 is NOT overlap)
+    ov = (diff_x < sum_w - _OV_TOL) & (diff_y < sum_h - _OV_TOL)
+    np.fill_diagonal(ov, False)  # exclude self-overlap
+
+    ii, jj = np.where(np.triu(ov, k=1))
+    for k in range(min(len(ii), overlap_sample)):
+        overlap_pairs.append((indices[ii[k]], indices[jj[k]]))
 
     num_overlaps = len(overlap_pairs)
     if num_overlaps:
