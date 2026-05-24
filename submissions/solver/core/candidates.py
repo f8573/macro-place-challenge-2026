@@ -18,7 +18,8 @@ import numpy as np
 import torch
 
 from macro_place.benchmark import Benchmark
-from submissions.solver.core.candidate_types import CandidatePlacement
+from submissions.solver.core.candidate_types import CandidateGenerationConfig, CandidatePlacement
+from submissions.solver.core.original_neighborhood import generate_original_neighborhood_candidates
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +498,7 @@ def _transform_variants(
 
 def generate_candidates(
     benchmark: Benchmark,
-    include_transforms: bool = True,
+    config: Optional[CandidateGenerationConfig] = None,
 ) -> List[CandidatePlacement]:
     """Generate all M2B candidates.
 
@@ -507,6 +508,7 @@ def generate_candidates(
     Returns:
         List of CandidatePlacement with unique names.
     """
+    cfg = config or CandidateGenerationConfig()
     canvas_w = benchmark.canvas_width
     canvas_h = benchmark.canvas_height
     sizes = benchmark.macro_sizes
@@ -517,52 +519,73 @@ def generate_candidates(
     degrees = _compute_degrees(benchmark)
 
     candidates: List[CandidatePlacement] = []
+    mandatory: List[CandidatePlacement] = []
 
     # A. Original candidates: raw first (bypass legalizer), legalized second (diagnostic).
-    candidates.append(_original_raw_candidate(benchmark))
-    candidates.append(_original_legalized_candidate(benchmark))
+    mandatory.append(_original_raw_candidate(benchmark))
+    mandatory.append(_original_legalized_candidate(benchmark))
+
+    neighborhood: List[CandidatePlacement] = []
+    try:
+        neighborhood = generate_original_neighborhood_candidates(benchmark, cfg)
+    except Exception:
+        neighborhood = []
+
+    global_candidates: List[CandidatePlacement] = []
 
     # B. Area/degree
-    try:
-        candidates.extend(_area_degree_candidates(benchmark, degrees, movable_indices))
-    except Exception:
-        pass
+    if not cfg.disable_global_candidates and not cfg.only_original_neighborhood:
+        try:
+            global_candidates.extend(_area_degree_candidates(benchmark, degrees, movable_indices))
+        except Exception:
+            pass
 
     # C. Spectral
-    try:
-        candidates.extend(_spectral_candidates(benchmark))
-    except Exception:
-        pass
+        try:
+            global_candidates.extend(_spectral_candidates(benchmark))
+        except Exception:
+            pass
 
     # D. Terminal-anchor
-    try:
-        candidates.extend(_terminal_anchor_candidates(benchmark, degrees, movable_indices))
-    except Exception:
-        pass
+        try:
+            global_candidates.extend(_terminal_anchor_candidates(benchmark, degrees, movable_indices))
+        except Exception:
+            pass
 
     # E. Cheap transforms on spectral base (if spectral succeeded)
-    if include_transforms:
+    if cfg.include_transforms and not cfg.disable_global_candidates and not cfg.only_original_neighborhood:
         transforms = ["flip_x", "flip_y", "flip_xy", "center_scale_085", "center_scale_070"]
-        spectral_base = next((c for c in candidates if c.name == "spectral_xy"), None)
+        spectral_base = next((c for c in global_candidates if c.name == "spectral_xy"), None)
         if spectral_base is not None:
             try:
                 variants = _transform_variants(
                     spectral_base, transforms, canvas_w, canvas_h, sizes, movable_hard
                 )
-                candidates.extend(variants)
+                global_candidates.extend(variants)
             except Exception:
                 pass
 
         # Transforms on area_degree_center_first
-        ad_base = next((c for c in candidates if c.name == "area_degree_center_first"), None)
+        ad_base = next((c for c in global_candidates if c.name == "area_degree_center_first"), None)
         if ad_base is not None:
             try:
                 variants = _transform_variants(
                     ad_base, transforms, canvas_w, canvas_h, sizes, movable_hard
                 )
-                candidates.extend(variants)
+                global_candidates.extend(variants)
             except Exception:
                 pass
+
+    candidates.extend(mandatory)
+    remaining_budget = None if cfg.candidate_budget is None else max(0, cfg.candidate_budget - len(candidates))
+    if remaining_budget is None:
+        candidates.extend(neighborhood)
+        candidates.extend(global_candidates)
+    else:
+        candidates.extend(neighborhood[:remaining_budget])
+        remaining_budget = max(0, cfg.candidate_budget - len(candidates))
+        if remaining_budget > 0:
+            candidates.extend(global_candidates[:remaining_budget])
 
     # Deduplicate names (keep first occurrence)
     seen = set()
