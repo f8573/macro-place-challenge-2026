@@ -1,53 +1,60 @@
 """
-SolverPlacer — Milestone 1 baseline.
+SolverPlacer — Milestone 2B.
 
-Shelf-pack that guarantees zero overlaps and in-bounds placements.
-Fixed macros stay; movable hard macros are packed left-to-right in rows
-sorted by descending height.  Soft macros remain at initial positions.
+Generates deterministic candidate placements, legalizes each, scores
+valid candidates using proxy cost (or HPWL when plc is unavailable),
+and returns the valid candidate with the lowest cost.
+
+The original placement is always included as the first candidate and
+serves as the fallback if all generated candidates are invalid.
 """
+
+import sys
+from pathlib import Path
 
 import torch
 from macro_place.benchmark import Benchmark
-#from submissions.solver.core.geometry import PLACEMENT_GAP
-from pathlib import Path
-import sys
 
 _THIS_DIR = Path(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
-from core.geometry import PLACEMENT_GAP
-
 
 class SolverPlacer:
-    """Thin baseline placer for Milestone 1."""
+    """M2B candidate-search placer."""
 
-    def place(self, benchmark: Benchmark) -> torch.Tensor:
-        placement = benchmark.macro_positions.clone()
-        movable = benchmark.get_movable_mask() & benchmark.get_hard_macro_mask()
-        indices = torch.where(movable)[0].tolist()
+    def place(self, benchmark: Benchmark, plc=None) -> torch.Tensor:
+        """Generate candidates, legalize, score, and return the best placement.
 
-        sizes = benchmark.macro_sizes
-        canvas_w = benchmark.canvas_width
+        Args:
+            benchmark: Benchmark object.
+            plc:       Optional PlacementCost object for proxy scoring.
+                       When None, HPWL is used as a scoring surrogate.
 
-        # Tallest-first shelf-pack heuristic
-        indices.sort(key=lambda i: -sizes[i, 1].item())
+        Returns:
+            torch.Tensor [num_macros, 2] center positions.
+        """
+        from core.candidates import generate_candidates
+        from core.candidate_scoring import score_and_select
 
-        gap = PLACEMENT_GAP
-        cursor_x = cursor_y = row_h = 0.0
+        candidates = generate_candidates(benchmark)
+        best, _ranked, diag = score_and_select(candidates, benchmark, plc=plc)
 
-        for idx in indices:
-            w = sizes[idx, 0].item()
-            h = sizes[idx, 1].item()
+        if (
+            best is None
+            or best.positions is None
+            or not best.valid
+            or diag.selected_due_to == "no_valid_scored_candidate"
+        ):
+            # No valid scored candidate available — refuse to emit a placement
+            # derived from invalid positions (overlap with fixed obstacles, OOB,
+            # etc.).  Fall back to the original benchmark positions.
+            print(
+                f"[SolverPlacer] WARNING: score_and_select returned no valid candidate "
+                f"(selected_due_to={diag.selected_due_to}, best.valid="
+                f"{getattr(best, 'valid', None)}); falling back to original positions.",
+                file=sys.stderr,
+            )
+            return benchmark.macro_positions.clone()
 
-            if cursor_x + w > canvas_w:
-                cursor_x = 0.0
-                cursor_y += row_h + gap
-                row_h = 0.0
-
-            placement[idx, 0] = cursor_x + w / 2
-            placement[idx, 1] = cursor_y + h / 2
-            cursor_x += w + gap
-            row_h = max(row_h, h)
-
-        return placement
+        return best.positions.float()

@@ -1,0 +1,5 @@
+# Persistent score cache (runtime-generated, not required for final quality)
+.cache/
+
+# Benchmark artifact JSON dumps (large generated data)
+artifacts/*.json
