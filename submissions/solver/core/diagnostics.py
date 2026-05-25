@@ -35,6 +35,7 @@ def check_placement(
     canvas_h: float,
     mask: torch.Tensor = None,
     overlap_sample: int = 10,
+    obstacle_mask: torch.Tensor = None,
 ) -> PlacementDiagnostics:
     """Pure geometry check (no official evaluator).
 
@@ -45,6 +46,10 @@ def check_placement(
         canvas_h:  Canvas height.
         mask:      Optional bool [N] mask of macros to check (default: all).
         overlap_sample: Maximum overlap pairs to record.
+        obstacle_mask: Optional bool [N] mask of fixed obstacles. When supplied,
+            mask-vs-obstacle overlaps are detected in addition to mask-vs-mask
+            overlaps. Obstacles are NOT themselves checked for bounds or
+            internal overlaps — they are assumed to be a valid backdrop.
     """
     n = positions.shape[0]
     msgs: List[str] = []
@@ -76,7 +81,6 @@ def check_placement(
     ws = sz_m[:, 0]
     hs = sz_m[:, 1]
 
-    M = len(indices)
     overlap_pairs: List[Tuple[int, int]] = []
 
     _OV_TOL = 1e-4  # µm tolerance for touching-edge false positives
@@ -94,9 +98,32 @@ def check_placement(
     for k in range(min(len(ii), overlap_sample)):
         overlap_pairs.append((indices[ii[k]], indices[jj[k]]))
 
-    num_overlaps = len(overlap_pairs)
+    # Mask-vs-obstacle overlap check (e.g. movable hard macros vs fixed hard
+    # macros). Soft macros and any other non-obstacle entries must be excluded
+    # from obstacle_mask by the caller. We deliberately strip mask members from
+    # obstacle_mask so a macro that appears in both lists is only counted once
+    # via the mask-vs-mask branch.
+    mo_overlap_total = 0
+    if obstacle_mask is not None:
+        obs_only = obstacle_mask & ~mask
+        obs_idx = torch.where(obs_only)[0].tolist()
+        if obs_idx and len(indices) > 0:
+            pos_o = positions[obs_only].numpy().astype(np.float64)
+            sz_o = sizes[obs_only].numpy().astype(np.float64)
+            d_x = np.abs(cx[:, None] - pos_o[:, 0][None, :]) * 2
+            d_y = np.abs(cy[:, None] - pos_o[:, 1][None, :]) * 2
+            s_w = ws[:, None] + sz_o[:, 0][None, :]
+            s_h = hs[:, None] + sz_o[:, 1][None, :]
+            ov_mo = (d_x < s_w - _OV_TOL) & (d_y < s_h - _OV_TOL)
+            mo_overlap_total = int(ov_mo.sum())
+            ii2, jj2 = np.where(ov_mo)
+            for k in range(min(len(ii2), max(0, overlap_sample - len(overlap_pairs)))):
+                overlap_pairs.append((indices[ii2[k]], obs_idx[jj2[k]]))
+
+    mm_overlap_total = int(np.triu(ov, k=1).sum())
+    num_overlaps = mm_overlap_total + mo_overlap_total
     if num_overlaps:
-        msgs.append(f"{num_overlaps}+ macro overlaps detected")
+        msgs.append(f"{num_overlaps} macro overlaps detected")
 
     valid = num_nonfinite == 0 and num_oob == 0 and num_overlaps == 0
 

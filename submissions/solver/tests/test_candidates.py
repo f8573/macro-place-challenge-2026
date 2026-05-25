@@ -2023,6 +2023,182 @@ def test_m2b_final_does_not_require_persistent_cache():
     )
 
 
+# ---------------------------------------------------------------------------
+# Blocker fix #1: original_raw must be validated against fixed hard obstacles.
+# ---------------------------------------------------------------------------
+
+
+def _make_bm_with_fixed_obstacle(
+    raw_position_for_movable: tuple,
+    fixed_position: tuple = (50.0, 50.0),
+    macro_size: float = 10.0,
+    canvas: float = 100.0,
+) -> Benchmark:
+    """Two-hard-macro benchmark: macro 0 is movable, macro 1 is a fixed obstacle."""
+    positions = torch.tensor(
+        [list(raw_position_for_movable), list(fixed_position)], dtype=torch.float32
+    )
+    return _make_benchmark(
+        n_hard=2,
+        canvas=canvas,
+        macro_size=macro_size,
+        positions=positions,
+        fixed_mask=[False, True],
+    )
+
+
+def test_original_raw_invalid_when_movable_hard_overlaps_fixed_hard():
+    """original_raw must be flagged invalid when a movable macro overlaps a fixed obstacle."""
+    bm = _make_bm_with_fixed_obstacle(raw_position_for_movable=(52.0, 50.0))
+    best, ranked, diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    raw = next(s for s in ranked if s.name == "original_raw")
+    assert not raw.valid, "original_raw must be invalid when overlapping a fixed obstacle"
+    assert not diag.raw_original_valid
+
+
+def test_original_raw_valid_when_touching_fixed_hard_edge_only():
+    """Touching a fixed obstacle edge (zero separation) must not flag invalid."""
+    # macro size = 10 -> half-width 5. Fixed at x=50, movable touching at x=40.
+    bm = _make_bm_with_fixed_obstacle(raw_position_for_movable=(40.0, 50.0))
+    _best, ranked, _diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    raw = next(s for s in ranked if s.name == "original_raw")
+    assert raw.valid, "original_raw touching a fixed obstacle edge must remain valid"
+
+
+def test_original_raw_invalid_fixed_overlap_falls_back_to_legalized_or_other_valid_candidate():
+    """When original_raw is invalid via fixed overlap, the selected best must not be original_raw."""
+    bm = _make_bm_with_fixed_obstacle(raw_position_for_movable=(52.0, 50.0))
+    best, ranked, _diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    # Best must be a valid candidate (legalized or other family) — never the invalid raw
+    assert best.valid, "Best must be a valid candidate when original_raw is invalid"
+    assert best.name != "original_raw"
+
+
+def test_soft_macros_not_treated_as_fixed_obstacles_for_original_raw():
+    """A soft macro coincident with a movable hard macro must not invalidate original_raw."""
+    # Three hard macros + one soft macro at the same coordinate as a hard macro.
+    positions = torch.tensor(
+        [
+            [10.0, 10.0],  # hard 0
+            [30.0, 10.0],  # hard 1
+            [10.0, 30.0],  # hard 2
+            [10.0, 10.0],  # soft 3 — overlapping hard 0 in raw coords
+        ],
+        dtype=torch.float32,
+    )
+    bm = _make_benchmark(
+        n_hard=3,
+        n_soft=1,
+        canvas=80.0,
+        macro_size=10.0,
+        positions=positions,
+        fixed_mask=[False, False, False, False],
+    )
+    _best, ranked, _diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    raw = next(s for s in ranked if s.name == "original_raw")
+    assert raw.valid, (
+        "Soft macro should not be treated as a fixed obstacle; original_raw "
+        "with non-overlapping hard macros must remain valid"
+    )
+
+
+def test_best_cost_never_uses_invalid_original_raw():
+    """Selection must never pick original_raw if it is invalid due to fixed overlap."""
+    bm = _make_bm_with_fixed_obstacle(raw_position_for_movable=(52.0, 50.0))
+    best, ranked, diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    assert best.valid
+    assert best.name != "original_raw"
+    # Ranked output: original_raw must not appear before any valid candidate
+    raw_idx = next(i for i, s in enumerate(ranked) if s.name == "original_raw")
+    valid_before_raw = any(s.valid for s in ranked[:raw_idx])
+    if not valid_before_raw:
+        # If no valid candidate is ranked before original_raw, ensure invariant_holds
+        # still flags the selection as the legalized fallback (selected_due_to)
+        assert diag.selected_due_to in ("fallback_original", "proxy_cost", "tie_break", "validity_only")
+
+
+# ---------------------------------------------------------------------------
+# Blocker fix #2: placement_hash must distinguish 0.05 µm refinement moves.
+# ---------------------------------------------------------------------------
+
+
+def test_placement_hash_distinguishes_0p05um_moves():
+    """Two placements differing by 0.05 µm must produce distinct hashes."""
+    from submissions.solver.core.candidate_scoring import (
+        placement_hash, PLACEMENT_HASH_TOLERANCE_UM,
+    )
+
+    assert PLACEMENT_HASH_TOLERANCE_UM < 0.05, (
+        f"Tolerance {PLACEMENT_HASH_TOLERANCE_UM} must be finer than 0.05 µm"
+    )
+    pos_a = torch.tensor([[10.0, 10.0], [20.0, 20.0]], dtype=torch.float32)
+    pos_b = torch.tensor([[10.05, 10.0], [20.0, 20.0]], dtype=torch.float32)
+    assert placement_hash(pos_a) != placement_hash(pos_b), (
+        "placement_hash must distinguish 0.05 µm moves"
+    )
+
+
+def test_duplicate_detection_does_not_collapse_tiny_refinement_moves():
+    """A 0.05 µm difference must not be marked as a duplicate by _mark_duplicates."""
+    from submissions.solver.core.candidate_scoring import _mark_duplicates
+    from submissions.solver.core.candidate_types import ScoredCandidate
+
+    pos_a = torch.tensor([[10.0, 10.0], [20.0, 20.0]], dtype=torch.float32)
+    pos_b = torch.tensor([[10.05, 10.0], [20.0, 20.0]], dtype=torch.float32)
+    sc_a = ScoredCandidate(
+        name="a", family="x", positions=pos_a, valid=True, proxy_cost=None,
+        delta_vs_original=None, num_overlaps=0, num_out_of_bounds=0,
+        num_unplaced=0, num_moved=0, max_move=0.0, total_move=0.0,
+        legalization_ms=0.0, scoring_ms=0.0, total_ms=0.0, no_op=True,
+        notes="", was_scored=False, metadata={}, messages=[],
+    )
+    sc_b = ScoredCandidate(
+        name="b", family="x", positions=pos_b, valid=True, proxy_cost=None,
+        delta_vs_original=None, num_overlaps=0, num_out_of_bounds=0,
+        num_unplaced=0, num_moved=0, max_move=0.0, total_move=0.0,
+        legalization_ms=0.0, scoring_ms=0.0, total_ms=0.0, no_op=True,
+        notes="", was_scored=False, metadata={}, messages=[],
+    )
+    dup_count, _ = _mark_duplicates([sc_a, sc_b], enable_hash_cache=True)
+    assert dup_count == 0, "0.05 µm refinement move must not be collapsed as duplicate"
+    assert sc_b.duplicate_of is None
+
+
+def test_official_score_cache_key_distinguishes_tiny_moves(tmp_path):
+    """The persistent score cache must use the same fine-grained hash."""
+    from submissions.solver.core.candidate_scoring import placement_hash
+    from submissions.solver.core.score_cache import OfficialScoreCache
+
+    cache = OfficialScoreCache(cache_path=tmp_path / "scores.jsonl")
+    pos_a = torch.tensor([[10.0, 10.0]], dtype=torch.float32)
+    pos_b = torch.tensor([[10.05, 10.0]], dtype=torch.float32)
+    h_a = placement_hash(pos_a)
+    h_b = placement_hash(pos_b)
+    assert h_a != h_b, "placement_hash must distinguish 0.05 µm moves at the cache layer"
+    cache.record("bm1", h_a, 1.0)
+    # Different placement (b) must not hit cache for placement a's cost
+    assert cache.lookup("bm1", h_b) is None
+    assert cache.lookup("bm1", h_a) == 1.0
+
+
+def test_cached_scores_do_not_apply_to_different_0p05um_placement(tmp_path):
+    """A cached cost for placement A must not be reused for a 0.05 µm displaced placement B."""
+    from submissions.solver.core.candidate_scoring import placement_hash
+    from submissions.solver.core.score_cache import OfficialScoreCache
+
+    cache = OfficialScoreCache(cache_path=tmp_path / "cache.jsonl")
+    pos_a = torch.tensor([[5.0, 5.0], [15.0, 15.0]], dtype=torch.float32)
+    pos_b = torch.tensor([[5.0, 5.0], [15.05, 15.0]], dtype=torch.float32)
+
+    cache.record("bm", placement_hash(pos_a), 0.123)
+
+    miss_b = cache.lookup("bm", placement_hash(pos_b))
+    assert miss_b is None, "Cache must miss for a 0.05 µm displaced placement"
+
+    hit_a = cache.lookup("bm", placement_hash(pos_a))
+    assert hit_a == 0.123
+
+
 def test_m2b_final_is_deterministic():
     """m2b-final profile must produce identical ranked output across cold reruns."""
     bm = _make_benchmark(
@@ -2051,3 +2227,132 @@ def test_m2b_final_is_deterministic():
             assert abs(sc1.proxy_cost - sc2.proxy_cost) < 1e-9, (
                 f"Cost differs for {sc1.name}: {sc1.proxy_cost} vs {sc2.proxy_cost}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Blocker fix #3: invalid original_raw must never be selected via fallback.
+# ---------------------------------------------------------------------------
+
+
+def _make_all_invalid_inputs(bm: Benchmark):
+    """Build a candidate list where original_raw, original_legalized, and any
+    extra candidate are all overlap-invalid via bypass_legalization=True."""
+    overlap_positions = bm.macro_positions.clone().float()
+    overlap_positions[1] = overlap_positions[0]  # force overlap
+    raw = CandidatePlacement(
+        "original_raw", "original", overlap_positions.clone(), bypass_legalization=True
+    )
+    leg = CandidatePlacement(
+        "original_legalized", "original", overlap_positions.clone(), bypass_legalization=True
+    )
+    extra = CandidatePlacement(
+        "extra_invalid", "original_neighborhood", overlap_positions.clone(), bypass_legalization=True
+    )
+    return [raw, leg, extra]
+
+
+def test_no_valid_candidates_does_not_select_invalid_original_raw():
+    """When every candidate is invalid, best.valid must be False and the sentinel
+    selected_due_to value must be reported — never a silent fallback to invalid raw."""
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0)
+    candidates = _make_all_invalid_inputs(bm)
+    best, ranked, diag = score_and_select(candidates, bm, plc=None)
+    assert best is not None
+    assert not best.valid, (
+        "Best must not be flagged valid when no valid candidates exist; "
+        f"got best.name={best.name!r} valid={best.valid}"
+    )
+    assert diag.selected_due_to == "no_valid_scored_candidate", (
+        f"Expected sentinel selected_due_to; got {diag.selected_due_to!r}"
+    )
+    assert not diag.invariant_holds, (
+        "invariant_holds must be False for the no-valid-candidate sentinel case"
+    )
+
+
+def test_invalid_original_raw_not_selected_when_valid_scored_empty():
+    """Specifically: an invalid original_raw must not be returned as best."""
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0)
+    candidates = _make_all_invalid_inputs(bm)
+    best, _ranked, diag = score_and_select(candidates, bm, plc=None)
+    # Either best is not original_raw, or original_raw is being returned as the
+    # sentinel but flagged invalid + selected_due_to=no_valid_scored_candidate.
+    if best.name == "original_raw":
+        assert not best.valid
+        assert diag.selected_due_to == "no_valid_scored_candidate"
+    else:
+        assert best.valid
+
+
+def test_invalid_original_raw_fallback_reports_failure():
+    """The placer must refuse to emit a placement when no valid candidate exists."""
+    from submissions.solver.placer import SolverPlacer
+
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0)
+    placer = SolverPlacer()
+    # The placer wires its own generate_candidates → we can't inject invalid
+    # candidates from the outside.  Instead exercise score_and_select directly
+    # and confirm the diagnostic.
+    candidates = _make_all_invalid_inputs(bm)
+    best, _ranked, diag = score_and_select(candidates, bm, plc=None)
+    assert diag.selected_due_to == "no_valid_scored_candidate"
+    assert not diag.invariant_holds
+
+
+def test_original_legalized_selected_if_raw_invalid_but_legalized_valid():
+    """When original_raw is invalid but original_legalized is valid, the latter must win."""
+    positions = torch.tensor([[50.0, 50.0]] * 4, dtype=torch.float32)
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0, positions=positions)
+    best, ranked, diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    assert best.valid, "Best must be a valid candidate"
+    assert best.name != "original_raw"
+    leg = next((s for s in ranked if s.name == "original_legalized"), None)
+    assert leg is not None and leg.valid, "original_legalized must exist and be valid"
+
+
+def test_generated_valid_candidate_selected_if_raw_invalid():
+    """If original_raw is invalid, the selected best must be valid (not raw)."""
+    positions = torch.tensor([[50.0, 50.0]] * 4, dtype=torch.float32)
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0, positions=positions)
+    best, _ranked, diag = score_and_select(generate_candidates(bm), bm, plc=None)
+    assert best.valid, f"Best must be valid; got best.valid={best.valid} name={best.name}"
+    assert diag.selected_due_to != "no_valid_scored_candidate"
+
+
+def test_selected_due_to_no_valid_scored_candidate_when_all_invalid():
+    """The sentinel diagnostic value must be set exactly when all candidates are invalid."""
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0)
+    candidates = _make_all_invalid_inputs(bm)
+    _best, _ranked, diag = score_and_select(candidates, bm, plc=None)
+    assert diag.selected_due_to == "no_valid_scored_candidate"
+
+
+def test_placer_refuses_to_emit_when_no_valid_candidate():
+    """SolverPlacer.place must fall back to original positions instead of emitting invalid best.
+
+    The pipeline normally generates a valid original_raw or original_legalized when
+    given a clean benchmark, so the path under test only fires when the fallback
+    sentinel triggers.  We monkey-patch generate_candidates to force the sentinel.
+    """
+    import submissions.solver.placer as placer_module
+
+    bm = _make_benchmark(n_hard=4, canvas=100.0, macro_size=10.0)
+    invalid_candidates = _make_all_invalid_inputs(bm)
+
+    # The placer uses `from core.candidates import generate_candidates` inside
+    # `place`, so patch the module reference resolved at import time.
+    import importlib
+    core_candidates = importlib.import_module("core.candidates")
+    original_gen = core_candidates.generate_candidates
+    core_candidates.generate_candidates = lambda _bm: invalid_candidates
+    try:
+        out_positions = placer_module.SolverPlacer().place(bm, plc=None)
+    finally:
+        core_candidates.generate_candidates = original_gen
+
+    # The placer must fall back to original positions (which themselves are valid here),
+    # NOT to the invalid overlapping positions from the sentinel best.
+    assert torch.allclose(out_positions, bm.macro_positions.float()), (
+        "Placer must fall back to original benchmark positions when score_and_select "
+        "reports no_valid_scored_candidate"
+    )

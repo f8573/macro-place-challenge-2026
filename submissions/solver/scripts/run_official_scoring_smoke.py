@@ -290,6 +290,8 @@ _SMOKE_PROFILES = {
         "neighborhood_step_profile": "medium",
         "refinement_around_winners": True,
         "refinement_top_k": 5,
+        # Pinned explicitly to insulate the profile against future dataclass-default drift.
+        "refinement_combo_size": 2,
         "refinement_seed_strategy": "diverse",
         "refinement_exploration_seeds": 1,
         "line_search_around_winners": True,
@@ -342,6 +344,7 @@ def main():
         only_original_neighborhood=args.only_original_neighborhood or p.get("only_original_neighborhood", False),
         refinement_around_winners=args.refinement_around_winners or p.get("refinement_around_winners", False),
         refinement_top_k=args.refinement_top_k if args.refinement_top_k is not None else p.get("refinement_top_k", 5),
+        refinement_combo_size=p.get("refinement_combo_size", 2),
         refinement_seed_strategy=args.refinement_seed_strategy if args.refinement_seed_strategy is not None else p.get("refinement_seed_strategy", "conservative"),
         refinement_exploration_seeds=args.refinement_exploration_seeds if args.refinement_exploration_seeds is not None else p.get("refinement_exploration_seeds", 1),
         line_search_around_winners=args.line_search_around_winners or p.get("line_search_around_winners", False),
@@ -389,11 +392,16 @@ def main():
     print(f"\n{'=' * 65}")
     print(f"Official scoring smoke PASSED: {len(results)} benchmarks")
     for row in results:
+        raw_c = row["raw_original_cost"]
+        best_c = row["best_cost"]
         delta = row["delta_vs_raw_original"]
         print(
-            f"  {row['benchmark']:20s}  raw={row['raw_original_cost']:.4f}  best={row['best_cost']:.4f}  "
-            f"delta={delta:+.6f}  winner={row['best_candidate']}  family={row['best_family']}  "
-            f"fresh={row.get('fresh_official_scores', row['official_scored_count'])}"
+            f"  {row['benchmark']:20s}"
+            f"  raw={f'{raw_c:.4f}' if raw_c is not None else 'N/A'}"
+            f"  best={f'{best_c:.4f}' if best_c is not None else 'N/A'}"
+            f"  delta={f'{delta:+.6f}' if delta is not None else 'N/A'}"
+            f"  winner={row['best_candidate']}  family={row['best_family']}"
+            f"  fresh={row.get('fresh_official_scores', row['official_scored_count'])}"
             f"  cache_hits={row.get('cache_hits', 0)}"
             f"  inv={'OK' if row['invariant_holds'] else 'VIOLATED'}"
         )

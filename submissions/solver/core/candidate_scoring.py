@@ -42,9 +42,27 @@ def _detect_scoring_mode(plc, benchmark: Benchmark) -> str:
     return "local_proxy"
 
 
+PLACEMENT_HASH_TOLERANCE_UM = 0.001
+"""Quantization tolerance for placement_hash, in µm.
+
+Must be strictly finer than the smallest generated movement so that distinct
+tiny refinement moves (the smallest is 0.05 µm — see
+``original_refinement._TINY_STEPS_UM``) hash to distinct keys.
+
+This same tolerance is reused for the persistent score-cache key, duplicate
+detection, and candidate-hash diagnostics so all three are consistent.
+"""
+
+_PLACEMENT_HASH_DECIMALS = 3  # log10(1 / PLACEMENT_HASH_TOLERANCE_UM)
+
+
 def placement_hash(positions: torch.Tensor) -> str:
-    """Return an 8-char hash of positions rounded to 0.1 um."""
-    arr = np.round(positions.detach().cpu().numpy().astype(np.float32), 1)
+    """Return an 8-char MD5 of positions quantized to ``PLACEMENT_HASH_TOLERANCE_UM``."""
+    # Quantize in float64 to avoid float32-rounding collisions before MD5.
+    arr = np.round(
+        positions.detach().cpu().numpy().astype(np.float64),
+        _PLACEMENT_HASH_DECIMALS,
+    )
     return hashlib.md5(arr.tobytes()).hexdigest()[:8]
 
 
@@ -157,6 +175,7 @@ def _prepare_candidate(
         canvas_w=benchmark.canvas_width,
         canvas_h=benchmark.canvas_height,
         mask=movable_mask,
+        obstacle_mask=obstacle_mask,
     )
     valid = diag.valid if candidate.bypass_legalization else (leg.valid and diag.valid)
     msgs = ([] if candidate.bypass_legalization else list(leg.messages)) + list(diag.messages)
@@ -1189,8 +1208,34 @@ def score_and_select(
     ranked = valid_sorted + diagnostic_scored + non_diagnostic_invalid
 
     if not valid_scored:
-        best = raw_sc if raw_sc is not None else (leg_sc if leg_sc is not None else scored[0])
-        selected_due_to = "fallback_original"
+        # No valid scored candidate.  Critical invariant: NEVER select an invalid
+        # candidate (in particular, never select an invalid original_raw — that would
+        # emit a placement that overlaps fixed obstacles or violates bounds).
+        # Preference order: legalized → raw → any other valid candidate → sentinel.
+        fallback_best = None
+        fallback_reason = None
+        if leg_sc is not None and leg_sc.valid:
+            fallback_best = leg_sc
+            fallback_reason = "fallback_legalized_original"
+        elif raw_sc is not None and raw_sc.valid:
+            fallback_best = raw_sc
+            fallback_reason = "fallback_original"
+        else:
+            other_valid = sorted(
+                (s for s in scored if s.valid and s.name not in {"original_raw", "original_legalized"}),
+                key=lambda s: s.name,
+            )
+            if other_valid:
+                fallback_best = other_valid[0]
+                fallback_reason = "fallback_other_valid"
+        if fallback_best is not None:
+            best = fallback_best
+            selected_due_to = fallback_reason
+        else:
+            # No valid candidate at all.  Return raw_sc (or first scored) as a sentinel
+            # marked invalid via best.valid=False; placer/caller must refuse to emit it.
+            best = raw_sc if raw_sc is not None else (leg_sc if leg_sc is not None else (scored[0] if scored else None))
+            selected_due_to = "no_valid_scored_candidate"
     elif score_is_degenerate:
         if raw_sc is not None and raw_sc.valid and raw_sc.was_scored and raw_sc.name not in diagnostic_only:
             best = raw_sc
@@ -1208,8 +1253,13 @@ def score_and_select(
         else None
     )
     invariant_holds = (
-        raw_original_proxy_cost is None or best_cost is None or best_cost <= raw_original_proxy_cost + 1e-9
+        best_cost is not None
+        and raw_original_proxy_cost is not None
+        and best_cost <= raw_original_proxy_cost + 1e-9
     )
+    # No-valid-candidate sentinel case must NEVER be reported as success.
+    if selected_due_to == "no_valid_scored_candidate":
+        invariant_holds = False
 
     # --- Candidate-admission audit ---
     _admission_prelegal_overlap = sum(

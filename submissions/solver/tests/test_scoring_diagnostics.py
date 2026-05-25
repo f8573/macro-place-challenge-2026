@@ -255,7 +255,14 @@ def test_selected_due_to_fallback_when_all_invalid():
     best, _, diag = score_and_select(candidates_only_bad, bm, plc=None)
     # original is always in scored; if invalid, selected_due_to='fallback_original'
     # (legalizer may repair it — accept either outcome)
-    assert diag.selected_due_to in ("fallback_original", "validity_only", "tie_break")
+    assert diag.selected_due_to in (
+        "fallback_original",
+        "fallback_legalized_original",
+        "fallback_other_valid",
+        "no_valid_scored_candidate",
+        "validity_only",
+        "tie_break",
+    )
 
 
 def test_scoring_diagnostics_is_returned():
@@ -266,7 +273,15 @@ def test_scoring_diagnostics_is_returned():
     _, _, diag = result
     assert isinstance(diag, ScoringDiagnostics)
     assert diag.scoring_mode in ("official", "local_proxy", "unavailable")
-    assert diag.selected_due_to in ("proxy_cost", "fallback_original", "validity_only", "tie_break")
+    assert diag.selected_due_to in (
+        "proxy_cost",
+        "fallback_original",
+        "fallback_legalized_original",
+        "fallback_other_valid",
+        "no_valid_scored_candidate",
+        "validity_only",
+        "tie_break",
+    )
 
 
 # ---------------------------------------------------------------------------

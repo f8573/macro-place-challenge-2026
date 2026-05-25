@@ -38,10 +38,23 @@ class SolverPlacer:
         from core.candidate_scoring import score_and_select
 
         candidates = generate_candidates(benchmark)
-        best, *_ = score_and_select(candidates, benchmark, plc=plc)
+        best, _ranked, diag = score_and_select(candidates, benchmark, plc=plc)
 
-        if best is None or best.positions is None:
-            # Emergency fallback: return original positions
+        if (
+            best is None
+            or best.positions is None
+            or not best.valid
+            or diag.selected_due_to == "no_valid_scored_candidate"
+        ):
+            # No valid scored candidate available — refuse to emit a placement
+            # derived from invalid positions (overlap with fixed obstacles, OOB,
+            # etc.).  Fall back to the original benchmark positions.
+            print(
+                f"[SolverPlacer] WARNING: score_and_select returned no valid candidate "
+                f"(selected_due_to={diag.selected_due_to}, best.valid="
+                f"{getattr(best, 'valid', None)}); falling back to original positions.",
+                file=sys.stderr,
+            )
             return benchmark.macro_positions.clone()
 
         return best.positions.float()

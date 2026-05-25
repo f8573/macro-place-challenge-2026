@@ -1,7 +1,8 @@
 """
 Persistent disk cache for official placement proxy scores.
 
-Cache key: benchmark_name + placement_hash (8-char MD5 of positions rounded to 0.1 um)
+Cache key: benchmark_name + placement_hash (8-char MD5 of positions quantized to
+``candidate_scoring.PLACEMENT_HASH_TOLERANCE_UM``).
 Cache format: JSONL, one entry per line, appended on write.
 Thread-unsafe; intended for single-process use per file.
 """

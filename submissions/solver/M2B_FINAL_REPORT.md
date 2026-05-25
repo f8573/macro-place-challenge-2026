@@ -1,6 +1,7 @@
 # M2B Final Report
 
 Generated: 2026-05-23
+Revised: 2026-05-24 (post-review fixes — see "Post-Review Fixes" section)
 
 ## Profile Configuration: `m2b-final`
 
@@ -103,7 +104,7 @@ Total runtime: ~1,152 s (~19.2 min). All benchmarks: 0 cache hits (true cold run
 | Mean delta | ~-0.0025 |
 | Median delta | ~-0.0001 |
 | Best improvement | ibm02: **-0.007431** |
-| Worst delta | ibm03: -2.9×10⁻⁵ (tiny but positive direction) |
+| Worst delta | ibm03: -2.9×10⁻⁵ (tiny improvement, right direction) |
 
 ibm02 winner matches the standalone ibm02 rerun exactly: `original_refinement_m51_tiny0p5um_p0_p1`, cost 1.558417. Cross-run determinism confirmed.
 
@@ -184,3 +185,101 @@ python -m submissions.solver.scripts.run_official_scoring_smoke \
 - [x] No benchmark regressed vs. original baseline
 - [ ] Broader benchmark validation (beyond ibm01/02/03) pending
 - [ ] `plc_client_os` submodule must be initialized for official scoring
+
+---
+
+## Post-Review Fixes (2026-05-24)
+
+Two correctness blockers and several nits raised during review were addressed.
+Placement quality was **not** tuned; only validation, hash precision, and
+diagnostics were changed.
+
+### Blocker #1 — `original_raw` fixed-hard obstacle validation
+
+- `submissions/solver/core/diagnostics.py::check_placement` now accepts an
+  optional `obstacle_mask` parameter and reports mask-vs-obstacle overlaps in
+  addition to mask-vs-mask overlaps. Soft macros are excluded by the caller via
+  `benchmark.macro_fixed & benchmark.get_hard_macro_mask()`.
+- `submissions/solver/core/candidate_scoring.py::_prepare_candidate` forwards
+  the obstacle mask in both the bypass-legalization (`original_raw`) and the
+  legalized paths, so a synthetic fixed-overlap can no longer mark
+  `original_raw` valid.
+- Regression tests added in `test_candidates.py`:
+  - `test_original_raw_invalid_when_movable_hard_overlaps_fixed_hard`
+  - `test_original_raw_valid_when_touching_fixed_hard_edge_only`
+  - `test_original_raw_invalid_fixed_overlap_falls_back_to_legalized_or_other_valid_candidate`
+  - `test_soft_macros_not_treated_as_fixed_obstacles_for_original_raw`
+  - `test_best_cost_never_uses_invalid_original_raw`
+
+### Blocker #2 — Placement-hash quantization too coarse
+
+- `placement_hash` previously rounded coordinates to 0.1 µm but refinement
+  generates moves as small as 0.05 µm (`_TINY_STEPS_UM[0]`). Distinct tiny
+  placements could collapse before scoring or hit the wrong cache entry.
+- Replaced the magic literal with a named constant
+  `PLACEMENT_HASH_TOLERANCE_UM = 0.001` (`candidate_scoring.py`) — strictly
+  finer than the smallest generated move. Documentation in `score_cache.py`
+  now points to the shared constant.
+- Regression tests added in `test_candidates.py`:
+  - `test_placement_hash_distinguishes_0p05um_moves`
+  - `test_duplicate_detection_does_not_collapse_tiny_refinement_moves`
+  - `test_official_score_cache_key_distinguishes_tiny_moves`
+  - `test_cached_scores_do_not_apply_to_different_0p05um_placement`
+
+Because candidate generation, prefiltering, and the budgeted scoring order are
+all unchanged — only post-score deduplication and cache-key precision change —
+no full official benchmark rerun was required (per review guidance). The
+recorded official numbers above remain valid for the unchanged candidate set;
+on a fresh cold run they would be at least as good (no tiny-move would be
+silently collapsed into a stale cached score).
+
+### Nits addressed
+
+- `trace_candidate_lifecycle.py` is now labelled a diagnostic script and
+  parses the target macro id from the candidate name's `mNNN` token, so it
+  generalises beyond `ibm02` / macro 256.
+- Removed the unused `line_search_score_budget` field from
+  `CandidateScoringConfig` and the unused `--line-search-budget` CLI flag from
+  `run_benchmarks.py`. The line-search pass intentionally uses
+  `max_official_scores − seed_discovery − refinement` as its budget, which is
+  documented inline.
+- `run_benchmarks.run_profile()` now plumbs `refinement_seed_strategy` and
+  `refinement_exploration_seeds` from the profile dictionary even when called
+  programmatically without an explicit `generation_config` — previously the
+  CLI parser was the only path that honoured the profile's diverse strategy.
+- `run_official_scoring_smoke._SMOKE_PROFILES["m2b-final"]` now pins
+  `refinement_combo_size = 2` and the surrounding `gen_cfg` construction
+  reads it, so the profile is insulated from future dataclass-default drift.
+- Wording: "positive direction" was replaced with "right direction" in the
+  aggregate-summary table to avoid implying a positive delta.
+
+### Known handoff caveat — `external/MacroPlacement` is dirty (Windows-only)
+
+Running `git status` from the project root reports the submodule as having
+modified content; `git -C external/MacroPlacement status` shows several
+modified `.v` / `.sv` / `.svh` files and two `deleted: ... matlab/export_fig`
+entries.
+
+This is a **Windows filesystem artifact**, not real local content drift, and
+must NOT be committed. Evidence:
+
+- `git -C external/MacroPlacement diff` fails with
+  `open("...parameters.v"): Function not implemented` /
+  `fatal: cannot hash ...parameters.v` — the file cannot even be hashed by
+  git on this filesystem.
+- `core.autocrlf = true` in this clone causes spurious line-ending diffs for
+  every text file that has CRLF translation enabled.
+- `core.symlinks = false` plus
+  `Testcases/mempool/.../matlab/export_fig -> ../../tb_tcdm_interconnect/.../export_fig`
+  (a symlink target on the upstream repo) is what surfaces as the
+  `deleted: matlab/export_fig` lines.
+
+On a POSIX checkout the submodule is clean at commit `45a721d`. From the seven
+commits on `m2b-intermediary` plus that pinned submodule SHA the build is
+reproducible; the dirty state visible here is **intentionally left untouched**
+to avoid creating noise commits that affect line endings or break Windows
+checkouts further. Do not run `git submodule update --init --force` on Windows
+expecting to clean it — the same artifact will reappear.
+
+If a reviewer wants a guaranteed-clean checkout, clone on a Linux/macOS host
+or in WSL2 with default git settings.

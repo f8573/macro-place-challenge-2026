@@ -497,6 +497,8 @@ def run_profile(
         refinement_around_winners=profile.get("refinement_around_winners", False),
         refinement_top_k=profile.get("refinement_top_k", 5),
         refinement_combo_size=profile.get("refinement_combo_size", 2),
+        refinement_seed_strategy=profile.get("refinement_seed_strategy", "conservative"),
+        refinement_exploration_seeds=profile.get("refinement_exploration_seeds", 1),
         line_search_around_winners=profile.get("line_search_around_winners", False),
         line_search_top_k=profile.get("line_search_top_k", 3),
         line_search_max_scale=profile.get("line_search_max_scale", 4.0),
@@ -631,8 +633,9 @@ def main():
                         help="Official score budget for neighborhood seed-discovery pass (default: ~32/60 of max).")
     parser.add_argument("--refinement-budget", type=int, default=None,
                         help="Official score budget for refinement pass (default: ~10/60 of max).")
-    parser.add_argument("--line-search-budget", type=int, default=None,
-                        help="Official score budget for line-search pass (default: remainder after seed+refinement).")
+    # Note: line-search budget is the remainder of max_official_scores after
+    # the seed-discovery and refinement passes (see candidate_scoring) and is
+    # not configurable separately.
     args = parser.parse_args()
 
     profile = _PROFILES[args.profile]
@@ -675,7 +678,6 @@ def main():
         clear_score_cache=args.clear_score_cache,
         seed_discovery_score_budget=args.seed_discovery_budget,
         refinement_score_budget=args.refinement_budget,
-        line_search_score_budget=args.line_search_budget,
     )
     run_profile(
         args.profile,

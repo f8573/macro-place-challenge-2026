@@ -50,7 +50,9 @@ class CandidateScoringConfig:
     # Unused budget in an earlier bucket flows to downstream buckets.
     seed_discovery_score_budget: Optional[int] = None
     refinement_score_budget: Optional[int] = None
-    line_search_score_budget: Optional[int] = None
+    # Note: line-search budget is intentionally derived as the remainder of
+    # ``max_official_scores`` after seed-discovery + refinement (see
+    # candidate_scoring.score_and_select) so there is no separate field.
     # Persistent disk cache for official scores (None = disabled)
     official_score_cache_path: Optional[str] = None
     disable_score_cache: bool = False
@@ -78,7 +80,9 @@ class ScoringDiagnostics:
     scoring_mode: str       # "official" | "local_proxy" | "unavailable"
     score_is_degenerate: bool
     num_unique_scores: int
-    selected_due_to: str    # "proxy_cost" | "fallback_original" | "validity_only" | "tie_break"
+    selected_due_to: str    # "proxy_cost" | "fallback_original" | "fallback_legalized_original"
+                            # | "fallback_other_valid" | "no_valid_scored_candidate"
+                            # | "validity_only" | "tie_break"
 
     raw_original_valid: bool = False
     raw_original_proxy_cost: Optional[float] = None
