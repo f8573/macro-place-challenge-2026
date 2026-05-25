@@ -1152,6 +1152,8 @@ def score_and_select(
     _m3a_candidates_generated = 0
     _m3a_rejected_bounds = 0
     _m3a_rejected_overlap = 0
+    # Fixed-hard macros are excluded before generation (ValueError in generate_pair_candidates
+    # rejects any pair where either macro is fixed-hard), so this counter stays 0.
     _m3a_rejected_fixed_hard = 0
     _m3a_rejected_other = 0
     _m3a_skipped_budget = 0
@@ -1325,10 +1327,16 @@ def score_and_select(
     slowest_candidate = timing_names[int(_times.argmax())] if _times.size else ""
 
     # --- Selection ---
+    # If any M3A candidate was skipped due to budget exhaustion the M3A pass is
+    # incomplete: a partially-scored slice is not a fair representative of the
+    # full M3A pool.  Exclude every m3a_pair_refinement candidate from selection
+    # and fall back to the pre-M3A (M2B) pool, which is always complete.
+    _m3a_budget_exhausted = _m3a_skipped_budget > 0
     diagnostic_only = {"original_legalized"} if raw_original_valid else set()
     valid_scored = [
         s for s in scored
         if s.valid and s.proxy_cost is not None and s.was_scored and s.name not in diagnostic_only
+        and not (_m3a_budget_exhausted and s.family == "m3a_pair_refinement")
     ]
 
     unique_costs = {round(float(s.proxy_cost), 9) for s in valid_scored}

@@ -15,10 +15,12 @@ Generated move types (at most one CandidatePlacement each):
                          the shared-net centroid, preserving their relative offset.
                          Axis chosen by larger absolute centroid delta; tie-break x.
 
-All coordinates are snapped to GRID_STEP (0.05 µm) after generation and after
-clamping.  Fixed-hard macro positions are asserted unchanged in every candidate.
+Coordinates are snapped to GRID_STEP (0.05 µm) after generation.  No clamping
+is applied: out-of-bounds coordinates are produced as-is and rejected by the
+existing _prepare_candidate / check_placement validation path before scoring.
+Fixed-hard macro positions are asserted unchanged in every candidate.
 All candidates use bypass_legalization=True so the validator runs on the raw
-proposed coordinates and rejects invalid placements before scoring.
+proposed coordinates.
 """
 
 import math
@@ -47,30 +49,10 @@ def _snap2(cx: float, cy: float) -> Tuple[float, float]:
     return snap_to_grid(cx), snap_to_grid(cy)
 
 
-def _clamp_center(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    canvas_w: float,
-    canvas_h: float,
-) -> Tuple[float, float]:
-    """Clamp macro center so the macro is fully inside the canvas."""
-    cx = max(w / 2.0, min(canvas_w - w / 2.0, cx))
-    cy = max(h / 2.0, min(canvas_h - h / 2.0, cy))
-    return cx, cy
-
-
-def _snap_and_clamp(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    canvas_w: float,
-    canvas_h: float,
-) -> Tuple[float, float]:
-    cx, cy = _snap2(cx, cy)
-    return _clamp_center(cx, cy, w, h, canvas_w, canvas_h)
+def _snap_to_m3a_grid(cx: float, cy: float) -> Tuple[float, float]:
+    """Snap (cx, cy) to the M3A 0.05 µm grid.  No clamping — OOB coords are
+    rejected by the _prepare_candidate / check_placement validation path."""
+    return snap_to_grid(cx), snap_to_grid(cy)
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +120,6 @@ def generate_pair_candidates(
     Candidates whose name is already in existing_names are skipped silently.
     Fixed-hard macro positions are checked by assertion in each generated placement.
     """
-    canvas_w = benchmark.canvas_width
-    canvas_h = benchmark.canvas_height
     sizes = benchmark.macro_sizes
     n_hard = benchmark.num_hard_macros
     fixed_mask = benchmark.macro_fixed
@@ -205,36 +185,36 @@ def generate_pair_candidates(
         )
 
     # 1. Swap: a takes b's position, b takes a's position.
-    new_cx_a_sw, new_cy_a_sw = _snap_and_clamp(cx_b, cy_b, w_a, h_a, canvas_w, canvas_h)
-    new_cx_b_sw, new_cy_b_sw = _snap_and_clamp(cx_a, cy_a, w_b, h_b, canvas_w, canvas_h)
+    new_cx_a_sw, new_cy_a_sw = _snap_to_m3a_grid(cx_b, cy_b)
+    new_cx_b_sw, new_cy_b_sw = _snap_to_m3a_grid(cx_a, cy_a)
     c = _build(f"{prefix}_swap", new_cx_a_sw, new_cy_a_sw, "swap", new_cx_b_sw, new_cy_b_sw)
     if c:
         candidates.append(c)
 
     # 2. Left: a's right edge flush with b's left edge; a's y unchanged.
     raw_cx = cx_b - w_b / 2.0 - w_a / 2.0
-    new_cx_a_l, new_cy_a_l = _snap_and_clamp(raw_cx, cy_a, w_a, h_a, canvas_w, canvas_h)
+    new_cx_a_l, new_cy_a_l = _snap_to_m3a_grid(raw_cx, cy_a)
     c = _build(f"{prefix}_left", new_cx_a_l, new_cy_a_l, "left")
     if c:
         candidates.append(c)
 
     # 3. Right: a's left edge flush with b's right edge; a's y unchanged.
     raw_cx = cx_b + w_b / 2.0 + w_a / 2.0
-    new_cx_a_r, new_cy_a_r = _snap_and_clamp(raw_cx, cy_a, w_a, h_a, canvas_w, canvas_h)
+    new_cx_a_r, new_cy_a_r = _snap_to_m3a_grid(raw_cx, cy_a)
     c = _build(f"{prefix}_right", new_cx_a_r, new_cy_a_r, "right")
     if c:
         candidates.append(c)
 
     # 4. Below: a's top edge flush with b's bottom edge; a's x unchanged.
     raw_cy = cy_b - h_b / 2.0 - h_a / 2.0
-    new_cx_a_bl, new_cy_a_bl = _snap_and_clamp(cx_a, raw_cy, w_a, h_a, canvas_w, canvas_h)
+    new_cx_a_bl, new_cy_a_bl = _snap_to_m3a_grid(cx_a, raw_cy)
     c = _build(f"{prefix}_below", new_cx_a_bl, new_cy_a_bl, "below")
     if c:
         candidates.append(c)
 
     # 5. Above: a's bottom edge flush with b's top edge; a's x unchanged.
     raw_cy = cy_b + h_b / 2.0 + h_a / 2.0
-    new_cx_a_ab, new_cy_a_ab = _snap_and_clamp(cx_a, raw_cy, w_a, h_a, canvas_w, canvas_h)
+    new_cx_a_ab, new_cy_a_ab = _snap_to_m3a_grid(cx_a, raw_cy)
     c = _build(f"{prefix}_above", new_cx_a_ab, new_cy_a_ab, "above")
     if c:
         candidates.append(c)
@@ -256,18 +236,12 @@ def generate_pair_candidates(
             step_x = 0.0
             step_y = math.copysign(GRID_STEP, delta_y) if abs(delta_y) > 1e-12 else GRID_STEP
 
-        # Move both macros, then snap and clamp each independently.
+        # Move both macros by one grid step and snap.  No clamping: OOB results
+        # are rejected by validation before scoring.
         cs_cx_a = snap_to_grid(cx_a + step_x)
         cs_cy_a = snap_to_grid(cy_a + step_y)
         cs_cx_b = snap_to_grid(cx_b + step_x)
         cs_cy_b = snap_to_grid(cy_b + step_y)
-
-        cs_cx_a, cs_cy_a = _clamp_center(cs_cx_a, cs_cy_a, w_a, h_a, canvas_w, canvas_h)
-        cs_cx_b, cs_cy_b = _clamp_center(cs_cx_b, cs_cy_b, w_b, h_b, canvas_w, canvas_h)
-
-        # Snap again after clamping (clamping may introduce sub-grid values).
-        cs_cx_a, cs_cy_a = _snap2(cs_cx_a, cs_cy_a)
-        cs_cx_b, cs_cy_b = _snap2(cs_cx_b, cs_cy_b)
 
         c = _build(
             f"{prefix}_centroid_shift",
