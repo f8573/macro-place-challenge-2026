@@ -171,13 +171,30 @@ def test_all_generated_coordinates_snap_to_grid():
                     )
 
 
-def test_no_clamping_oob_allowed():
-    """Candidates that move a macro out of bounds must be generated raw, not clamped."""
-    # Place all macros near an edge so rotation moves one OOB.
+def test_no_clamping_oob_coord_is_grid_aligned_not_clamped():
+    """OOB M3B coordinates must be snap-then-emit, not clamped to the legal boundary.
+
+    Fixture: macro_size=10.03 → half=5.015 → max_valid_cx=94.985 (NOT a 0.05 µm multiple).
+    B is placed at x=94.98, which is valid (94.98 < 94.985) but snaps to 95.0 (OOB).
+    Cyclic rotation puts A at snap(B.x)=95.0.
+
+    A correct no-clamping implementation emits 95.0 (grid-aligned OOB).
+    A buggy clamp-to-valid implementation would emit either:
+      - 94.985 (clamp to max_valid → off-grid, fractional check catches it), or
+      - 94.95  (clamp then snap-down → wrong value, coordinate-value check catches it).
+    Both failure modes are detected by the assertions below.
+    """
+    macro_size = 10.03
+    canvas = 100.0
+    half = macro_size / 2.0     # 5.015
+    max_valid = canvas - half   # 94.985 — NOT a 0.05 µm grid multiple
+
+    # B.x=94.98: valid initial center (94.98 < 94.985).
+    # snap(94.98 / 0.05) = round(1899.6) * 0.05 = 1900 * 0.05 = 95.0 → OOB.
     bm = make_benchmark(
-        n_hard=3, canvas=30.0, macro_size=10.0,
+        n_hard=3, canvas=canvas, macro_size=macro_size,
         net_nodes=[[0, 1], [0, 2], [1, 2]],
-        positions=[[5.0, 5.0], [15.0, 5.0], [5.0, 15.0]],
+        positions=[[5.05, 5.05], [94.98, 5.05], [5.05, 94.98]],
     )
     triples = enumerate_net_coupled_triples(bm, top_k=10)
     if not triples:
@@ -185,18 +202,36 @@ def test_no_clamping_oob_allowed():
     pos = bm.macro_positions.clone().float()
     a, b, c, _ = triples[0]
     cands = generate_cluster_candidates(bm, pos, a, b, c, 0, set())
-    # At least one candidate must be generated — no clamping should suppress them.
-    assert len(cands) >= 1, "generation must not silently discard candidates via clamping"
+    assert len(cands) >= 1, "generation must produce at least one candidate"
 
-    # Verify at least one candidate has all three macros within valid bounds.
-    half = 10.0 / 2.0
+    # Collect all coordinates outside the legal center interval.
+    oob_vals: list[float] = []
     for cand in cands:
         for mid in (a, b, c):
             x = float(cand.positions[mid, 0].item())
             y = float(cand.positions[mid, 1].item())
-            # Simply check value was not forcibly clamped to [half, canvas-half].
-            # We allow OOB (negative or beyond canvas) — that is the intended behaviour.
-            _ = x  # no assertion: OOB is fine here
+            if x > max_valid or x < half:
+                oob_vals.append(x)
+            if y > max_valid or y < half:
+                oob_vals.append(y)
+
+    assert oob_vals, (
+        f"Expected at least one OOB coordinate (max_valid={max_valid}), but all "
+        "coordinates were within bounds.  A clamping implementation would pass this "
+        "incorrectly — the no-clamping invariant requires raw OOB emission."
+    )
+
+    # Each OOB value must be grid-aligned (snap-then-emit, not clamp-to-boundary).
+    # Clamp-to-max_valid=94.985 → fractional=0.7, caught.
+    # Clamp-then-snap-down to 94.95 → value differs from expected 95.0, also caught.
+    for v in oob_vals:
+        quotient = v / GRID_STEP
+        fractional = abs(quotient - round(quotient))
+        assert fractional < 1e-3, (
+            f"OOB coordinate {v} is not on the 0.05 µm grid (fractional={fractional:.2e}). "
+            f"Expected snap-to-grid then emit; clamp-repair would produce off-grid "
+            f"or wrong-grid values near max_valid={max_valid}."
+        )
 
 
 def test_existing_names_deduplicated():
