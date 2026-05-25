@@ -1280,7 +1280,155 @@ def score_and_select(
 
             scored.extend(m3a_scored_list)
 
-    candidates_officially_scored = pass1_scored_count + pass2_scored_count + pass3_scored_count + pass4_scored_count
+    # --- Pass 5: M3B cluster refinement ---
+    # Generates coordinated 3-macro cluster moves from the current M2B/M3A winner and adds
+    # them to the candidate pool.  Only runs when m3b_cluster_refinement=True in
+    # generation_config.  All existing M2B/M3A invariants are preserved.
+    pass5_scored_count = 0
+    _pass5_dup_count = 0
+    _m3b_clusters_considered = 0
+    _m3b_candidates_generated = 0
+    _m3b_valid = 0
+    _m3b_invalid = 0
+    _m3b_rejected_bounds = 0
+    _m3b_rejected_overlap = 0
+    _m3b_rejected_other = 0
+    _m3b_skipped_budget = 0
+    _m3b_candidates_scored = 0
+    _m3b_fresh_scores = 0
+    _m3b_cache_hits = 0
+    _m3b_best_score: Optional[float] = None
+    _m3b_best_delta: Optional[float] = None
+    _m3b_best_candidate: str = ""
+
+    if gen_cfg is not None and getattr(gen_cfg, "m3b_cluster_refinement", False):
+        from submissions.solver.core.m3b_cluster_enumeration import enumerate_net_coupled_triples
+        from submissions.solver.core.m3b_candidate_generation import generate_m3b_candidates_for_clusters
+
+        _m3b_top_k_clusters = int(getattr(gen_cfg, "m3b_top_k_clusters", 32))
+
+        # Determine the best winner from passes 1–4 (M2B + M3A) before M3B extends the pool.
+        _diag_only_set_m3b: set = {"original_legalized"} if raw_original_valid else set()
+        _pre_m3b_valid_scored = [
+            s for s in scored
+            if s.valid and s.proxy_cost is not None and s.was_scored
+            and s.name not in _diag_only_set_m3b
+            and not (_m3a_skipped_budget > 0 and s.family == "m3a_pair_refinement")
+        ]
+
+        if _pre_m3b_valid_scored:
+            _m3b_order_tmp = {sc.name: idx for idx, sc in enumerate(scored)}
+            _m3b_winner = min(
+                _pre_m3b_valid_scored,
+                key=lambda s: (float(s.proxy_cost), _m3b_order_tmp.get(s.name, len(scored))),
+            )
+            _m3b_winner_positions = _m3b_winner.positions
+
+            # Enumerate net-coupled triples from the best M2B/M3A winner.
+            triples = enumerate_net_coupled_triples(benchmark, _m3b_top_k_clusters)
+            _m3b_clusters_considered = len(triples)
+
+            # Generate candidates, avoiding names already in the scored pool.
+            _m3b_existing_names: set = {sc.name for sc in scored}
+            m3b_placements = generate_m3b_candidates_for_clusters(
+                benchmark, _m3b_winner_positions, triples, _m3b_existing_names
+            )
+            _m3b_candidates_generated = len(m3b_placements)
+
+            # Validate (bypass_legalization=True: no legalizer, validate raw coords).
+            m3b_scored_list: List[ScoredCandidate] = [
+                _prepare_candidate(c, benchmark, movable_mask, obstacle_mask, cfg.legalizer_max_rings)
+                for c in m3b_placements
+            ]
+
+            # Classify rejections and valid/invalid counts for diagnostics.
+            for msc in m3b_scored_list:
+                if msc.valid:
+                    _m3b_valid += 1
+                else:
+                    _m3b_invalid += 1
+                    if msc.num_out_of_bounds > 0 and msc.num_overlaps == 0:
+                        _m3b_rejected_bounds += 1
+                    elif msc.num_overlaps > 0:
+                        _m3b_rejected_overlap += 1
+                    else:
+                        _m3b_rejected_other += 1
+
+            # Assign generation ranks continuing from previous passes.
+            _pass5_gen_base = len(scored)
+            for local_rank, msc in enumerate(m3b_scored_list):
+                msc.metadata["generation_rank"] = _pass5_gen_base + local_rank
+                msc.metadata["pass_id"] = 5
+
+            # Dedup against the full scored pool (including passes 1–4).
+            _pass5_dup_count, hash_map = _mark_duplicates(
+                m3b_scored_list,
+                enable_hash_cache=cfg.enable_hash_cache,
+                existing_hashes=hash_map,
+            )
+            total_dup_count += _pass5_dup_count
+
+            # Compute remaining budget for M3B.
+            _already_used_m3b = (
+                pass1_scored_count + pass2_scored_count
+                + pass3_scored_count + pass4_scored_count
+            )
+            _m3b_budget_config = getattr(gen_cfg, "m3b_score_budget", None)
+            _remaining_global_m3b = (
+                None if cfg.max_official_scores is None
+                else max(0, cfg.max_official_scores - _already_used_m3b)
+            )
+            if _m3b_budget_config is not None and _remaining_global_m3b is not None:
+                _m3b_budget = min(int(_m3b_budget_config), _remaining_global_m3b)
+            elif _m3b_budget_config is not None:
+                _m3b_budget = int(_m3b_budget_config)
+            else:
+                _m3b_budget = _remaining_global_m3b
+
+            # Score valid, non-duplicate M3B candidates in generation order.
+            _m3b_score_indices = [
+                idx for idx, msc in enumerate(m3b_scored_list)
+                if msc.valid and msc.duplicate_of is None
+            ]
+            pass5_scored_count = _score_batch(
+                m3b_scored_list,
+                _m3b_score_indices,
+                benchmark,
+                plc,
+                max_scores=_m3b_budget,
+                already_scored=0,
+                cache=score_cache,
+                benchmark_name=benchmark_name,
+                timing_records=timing_records,
+                timing_names=timing_names,
+                skipped_by_budget_acc=skipped_by_budget_acc,
+                scoring_rank_counter=scoring_rank_counter,
+            )
+
+            # Propagate deltas and collect M3B-specific stats.
+            for msc in m3b_scored_list:
+                if msc.proxy_cost is not None and raw_original_proxy_cost is not None:
+                    msc.delta_vs_original = msc.proxy_cost - raw_original_proxy_cost
+                if msc.metadata.get("cache_hit"):
+                    _m3b_cache_hits += 1
+                if msc.was_scored:
+                    _m3b_candidates_scored += 1
+                if msc.metadata.get("skip_reason") == "budget_exceeded":
+                    _m3b_skipped_budget += 1
+                if msc.valid and msc.proxy_cost is not None and msc.was_scored:
+                    if _m3b_best_score is None or msc.proxy_cost < _m3b_best_score:
+                        _m3b_best_score = msc.proxy_cost
+                        _m3b_best_delta = msc.delta_vs_original
+                        _m3b_best_candidate = msc.name
+
+            _m3b_fresh_scores = pass5_scored_count
+
+            scored.extend(m3b_scored_list)
+
+    candidates_officially_scored = (
+        pass1_scored_count + pass2_scored_count + pass3_scored_count
+        + pass4_scored_count + pass5_scored_count
+    )
     fresh_official_scores = candidates_officially_scored  # fresh only (cache hits excluded)
 
     # --- Post-process: ensure all unscored candidates have a skip_reason ---
@@ -1332,11 +1480,13 @@ def score_and_select(
     # full M3A pool.  Exclude every m3a_pair_refinement candidate from selection
     # and fall back to the pre-M3A (M2B) pool, which is always complete.
     _m3a_budget_exhausted = _m3a_skipped_budget > 0
+    _m3b_budget_exhausted = _m3b_skipped_budget > 0
     diagnostic_only = {"original_legalized"} if raw_original_valid else set()
     valid_scored = [
         s for s in scored
         if s.valid and s.proxy_cost is not None and s.was_scored and s.name not in diagnostic_only
         and not (_m3a_budget_exhausted and s.family == "m3a_pair_refinement")
+        and not (_m3b_budget_exhausted and s.family == "m3b_cluster_refinement")
     ]
 
     unique_costs = {round(float(s.proxy_cost), 9) for s in valid_scored}
@@ -1487,5 +1637,28 @@ def score_and_select(
             if best is not None and best.family == "m3a_pair_refinement"
             else ("original_raw" if best is not None and best.name == "original_raw" else "m2b_final")
         ) if best is not None else "",
+        m3b_clusters_considered=_m3b_clusters_considered,
+        m3b_candidates_generated=_m3b_candidates_generated,
+        m3b_valid=_m3b_valid,
+        m3b_invalid=_m3b_invalid,
+        m3b_duplicates=_pass5_dup_count if gen_cfg is not None and getattr(gen_cfg, "m3b_cluster_refinement", False) else 0,
+        m3b_scored=_m3b_candidates_scored,
+        m3b_skipped_budget=_m3b_skipped_budget,
+        m3b_budget_exhausted=_m3b_budget_exhausted,
+        m3b_selectable=(
+            sum(
+                1 for s in scored
+                if s.family == "m3b_cluster_refinement"
+                and s.valid and s.was_scored and s.proxy_cost is not None
+            ) if not _m3b_budget_exhausted else 0
+        ),
+        m3b_best_candidate=_m3b_best_candidate,
+        m3b_best_delta=_m3b_best_delta,
+        m3b_rejected_bounds=_m3b_rejected_bounds,
+        m3b_rejected_overlap=_m3b_rejected_overlap,
+        m3b_rejected_other=_m3b_rejected_other,
+        m3b_fresh_scores=_m3b_fresh_scores,
+        m3b_cache_hits=_m3b_cache_hits,
+        m3b_best_score=_m3b_best_score,
     )
     return best, ranked, diagnostics

@@ -38,6 +38,10 @@ class CandidateGenerationConfig:
     m3a_pair_refinement: bool = False
     m3a_top_k_pairs: int = 64          # default for m3a-default; smoke uses 16
     m3a_score_budget: Optional[int] = None  # None = use whatever remains from global budget
+    # M3B pass (fifth-stage, coordinated 3-macro cluster refinement on M2B/M3A winner)
+    m3b_cluster_refinement: bool = False
+    m3b_top_k_clusters: int = 32       # default for m3b-default; smoke uses 8
+    m3b_score_budget: Optional[int] = None  # None = use whatever remains from global budget
 
 
 @dataclass(frozen=True)
@@ -149,6 +153,24 @@ class ScoringDiagnostics:
     m3a_best_score: Optional[float] = None
     m3a_best_delta: Optional[float] = None
     m3a_winner_source: str = ""  # "original_raw" | "m2b_final" | "m3a_pair_refinement"
+    # M3B cluster-refinement diagnostics (populated when m3b_cluster_refinement=True)
+    m3b_clusters_considered: int = 0
+    m3b_candidates_generated: int = 0
+    m3b_valid: int = 0
+    m3b_invalid: int = 0
+    m3b_duplicates: int = 0
+    m3b_scored: int = 0
+    m3b_skipped_budget: int = 0
+    m3b_budget_exhausted: bool = False
+    m3b_selectable: int = 0
+    m3b_best_candidate: str = ""
+    m3b_best_delta: Optional[float] = None
+    m3b_rejected_bounds: int = 0
+    m3b_rejected_overlap: int = 0
+    m3b_rejected_other: int = 0
+    m3b_fresh_scores: int = 0
+    m3b_cache_hits: int = 0
+    m3b_best_score: Optional[float] = None
 
 
 @dataclass
