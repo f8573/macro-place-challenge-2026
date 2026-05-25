@@ -34,6 +34,10 @@ class CandidateGenerationConfig:
     line_search_top_k: int = 3
     line_search_max_scale: float = 4.0
     line_search_stop_after_worse: int = 2  # stop per-macro after N consecutive worse official scores
+    # M3A pass (fourth-stage, coordinated 2-macro pair refinement on M2B winner)
+    m3a_pair_refinement: bool = False
+    m3a_top_k_pairs: int = 64          # default for m3a-default; smoke uses 16
+    m3a_score_budget: Optional[int] = None  # None = use whatever remains from global budget
 
 
 @dataclass(frozen=True)
@@ -130,6 +134,21 @@ class ScoringDiagnostics:
     admission_legalization_failed: int = 0           # legalizer ran + invalid result
     # Refinement seed bucket diagnostics (populated when refinement_seed_strategy="diverse")
     refinement_seed_bucket_diagnostics: List[Dict[str, Any]] = field(default_factory=list)
+    # M3A pair-refinement diagnostics (populated when m3a_pair_refinement=True)
+    m3a_pairs_considered: int = 0
+    m3a_top_k_pairs: int = 0
+    m3a_candidates_generated: int = 0
+    m3a_rejected_bounds: int = 0
+    m3a_rejected_overlap: int = 0
+    m3a_rejected_fixed_hard: int = 0
+    m3a_rejected_other: int = 0
+    m3a_skipped_budget: int = 0
+    m3a_candidates_scored: int = 0
+    m3a_fresh_scores: int = 0
+    m3a_cache_hits: int = 0
+    m3a_best_score: Optional[float] = None
+    m3a_best_delta: Optional[float] = None
+    m3a_winner_source: str = ""  # "original_raw" | "m2b_final" | "m3a_pair_refinement"
 
 
 @dataclass
