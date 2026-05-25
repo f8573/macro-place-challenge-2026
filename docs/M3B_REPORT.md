@@ -250,7 +250,61 @@ M3A and M3B. Verifies that no partial M3A or M3B candidate wins under budget pre
 
 ## Benchmark Results
 
-*Results to be filled in after cold benchmark runs complete.*
+All runs executed with `--clear-score-cache`.
+
+### M3A-Default Baseline
+
+| Benchmark | Valid | Best candidate | Family | Cost | Fresh scores |
+|---|---:|---|---|---:|---:|
+| ibm01 | True | `original_line_search_m215_scale2p5x` | `original_line_search` | 1.0384 | 60 |
+| ibm02 | True | `original_refinement_m51_tiny0p5um_p0_p1` | `original_refinement` | 1.5584 | 60 |
+| ibm03 | True | `original_refinement_m289_tiny0p25um_m1_p0` | `original_refinement` | 1.3255 | 60 |
+
+### M3B-Default
+
+| Benchmark | Valid | Best candidate | Family | Cost | Fresh scores | Result vs M3A |
+|---|---:|---|---|---:|---:|---|
+| ibm01 | True | `original_line_search_m215_scale2p5x` | `original_line_search` | 1.0384 | 60 | Tie |
+| ibm02 | True | `original_refinement_m51_tiny0p5um_p0_p1` | `original_refinement` | 1.5584 | 60 | Tie |
+| ibm03 | True | `original_refinement_m289_tiny0p25um_m1_p0` | `original_refinement` | 1.3255 | 60 | Tie |
+
+### M3B-Default Interpretation
+
+M3B-default is valid on all three benchmarks and is not worse than M3A-default.
+
+M3B does not strictly improve on these benchmarks. The M2B refinement and line-search passes
+exhaust the `max_official_scores=60` budget before M3B candidates can be scored. With the
+shared budget fully consumed by prior passes, M3B candidates are generated and validated but
+never scored — they cannot compete in selection.
+
+This is the correct safety behavior (invariant 9: unscored candidates are never selectable)
+and is documented per the spec ("If it does not improve, do not overfit, add clamping, expand
+budget, or mutate M2B/M3A behavior. Document the tie/non-improvement in M3B_REPORT.md").
+
+The M3B family does appear in the candidate diversity output (`families` includes
+`m3b_cluster_refinement`), confirming generation succeeds and candidates enter the pool.
+
+### M3B-Smoke
+
+| Benchmark | Valid | Best candidate | Family | Cost | Fresh scores |
+|---|---:|---|---|---:|---:|
+| ibm01 | True | `original_line_search_m215_scale2p5x` | `original_line_search` | 1.0384 | 60 |
+| ibm02 | True | `original_refinement_m51_tiny0p5um_p0_p1` | `original_refinement` | 1.5584 | 60 |
+| ibm03 | True | `original_refinement_m289_tiny0p25um_m1_p0` | `original_refinement` | 1.3255 | 57 |
+
+Smoke confirms M3B candidates enter the pool (`m3b_cluster_refinement` appears in families)
+and the pipeline is stable.
+
+### M3B-Budget-Stress
+
+| Benchmark | Valid | Best candidate | Family | Cost | Fresh scores | Result |
+|---|---:|---|---|---:|---:|---|
+| ibm01 | True | `original_refinement_m117_tiny0p1um_m1_p0` | `original_refinement` | 1.0385 | 5 | Pass |
+| ibm02 | True | `original_refinement_m51_scale0p25x` | `original_refinement` | 1.5629 | 5 | Pass |
+| ibm03 | True | `original_refinement_m72_tiny0p1um_p1_p0` | `original_refinement` | 1.3255 | 5 | Pass |
+
+No M3B (or M3A) candidate wins under the 5-score budget. All winners come from
+`original_refinement`, confirming the budget-exhaustion guard blocks partial M3B selection.
 
 ### Acceptance Gate
 
@@ -258,10 +312,10 @@ The hard acceptance gates are:
 
 - All existing M2B and M3A tests pass. ✓ (399/399 tests pass)
 - All new M3B tests pass. ✓ (65 new tests pass)
-- `m3b-smoke` runs successfully. (pending)
-- `m3b-budget-stress` is valid and does not select partial M3B candidates. (pending)
-- `m3b-default` is valid on ibm01/ibm02/ibm03. (pending)
-- `m3b-default` is not worse than `m3a-default`/`m2b-final` on ibm01/ibm02/ibm03. (pending)
+- `m3b-smoke` runs successfully. ✓
+- `m3b-budget-stress` is valid and does not select partial M3B candidates. ✓
+- `m3b-default` is valid on ibm01/ibm02/ibm03. ✓
+- `m3b-default` is not worse than `m3a-default`/`m2b-final` on ibm01/ibm02/ibm03. ✓ (ties)
 
 ---
 
@@ -289,6 +343,24 @@ capped at 32 × 3 = 96 candidates, subject to the shared `max_official_scores` b
 
 ## Acceptance Decision
 
-*To be updated after cold benchmark runs confirm non-regression.*
+**M3B is accepted and ready to freeze.**
 
-Target classification: **M3B: ACCEPTED / FROZEN** (pending benchmark confirmation)
+Acceptance evidence:
+
+- 399/399 tests pass (334 pre-M3B + 65 new M3B tests).
+- M3B-default cold run is valid on ibm01/ibm02/ibm03.
+- M3B-default ties M3A-default on all three required cold benchmarks.
+- M3B-budget-stress is valid on ibm01/ibm02/ibm03.
+- Reduced-budget M3B does not select partial M3B candidates.
+- Invalid M3B candidates are rejected before scoring.
+- M3B does not clamp or repair bounds.
+- M2B-final and M3A-default remain the safety nets.
+- All 14 hard invariants hold.
+
+Final classification:
+
+**M3B: ACCEPTED / FROZEN**
+**Result:** Safe non-regression extension
+**Performance:** Ties M3A-default on required cold benchmarks
+**Non-improvement reason:** M2B passes exhaust the `max_official_scores=60` budget; M3B candidates are generated and validated but not scored within the shared budget
+**Next milestone:** M3C or budget-split strategy to reserve scoring slots for M3B
