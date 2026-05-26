@@ -890,6 +890,11 @@ def score_and_select(
             _ref_budget = max(_min_ref_by_seeds, total * 10 // 60)
 
     _pass1_max: Optional[int] = _seed_budget if (_has_ls or _has_ref) else _pre_m3_total
+    # M3C guard: seed_discovery_score_budget is a request, not an absolute override.
+    # Clamp _pass1_max to _pre_m3_total so M3A/M3B reserved slices cannot be crowded out
+    # and total fresh scores never exceed max_official_scores.
+    if _m3c_enabled and _pre_m3_total is not None:
+        _pass1_max = min(_pass1_max, _pre_m3_total) if _pass1_max is not None else _pre_m3_total
     _pass2_max: Optional[int] = _ref_budget
 
     # --- Timing and rank accumulators ---

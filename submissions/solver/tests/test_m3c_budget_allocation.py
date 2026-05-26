@@ -867,6 +867,84 @@ def test_m3c_arbitrary_overallocation_clamps_actual_fresh_scores():
     )
 
 
+def test_m3c_explicit_seed_budget_clamped_to_pre_m3_alloc():
+    """Codex P1 regression: explicit seed_discovery_score_budget must be clamped.
+
+    When seed_discovery_score_budget=60 is supplied with max=60, pre_m3=50,
+    m3a=5, m3b=5, pass 1 must not score more than 50 fresh candidates.
+    Without the fix, pass 1 uses seed_budget=60 and M3A/M3B then push total over max=60.
+    """
+    bm = _bm()
+    gen_cfg = _m3c_gen_cfg(
+        m3c_pre_m3_budget=50,
+        m3c_m3a_reserved_budget=5,
+        m3c_m3b_reserved_budget=5,
+        refinement_around_winners=True,
+        refinement_top_k=2,
+        line_search_around_winners=True,
+        line_search_top_k=2,
+    )
+    score_cfg = CandidateScoringConfig(
+        max_official_scores=60,
+        seed_discovery_score_budget=60,
+    )
+    cands = generate_candidates(bm, gen_cfg)
+    _best, ranked, diag = score_and_select(cands, bm, plc=None,
+                                            scoring_config=score_cfg,
+                                            generation_config=gen_cfg)
+
+    assert diag.m3c_pre_m3_used <= 50, (
+        f"Pre-M3 fresh scores {diag.m3c_pre_m3_used} exceeded pre-M3 allocation=50. "
+        f"seed_discovery_score_budget=60 must be clamped to 50."
+    )
+    assert diag.fresh_official_scores <= 60, (
+        f"Total fresh scores {diag.fresh_official_scores} exceeded max_official_scores=60"
+    )
+    total_post_m3 = diag.m3a_fresh_scores + diag.m3b_fresh_scores
+    assert diag.m3c_pre_m3_used + total_post_m3 <= 60, (
+        f"Pre-M3({diag.m3c_pre_m3_used}) + M3A/M3B({total_post_m3}) = "
+        f"{diag.m3c_pre_m3_used + total_post_m3} > max=60"
+    )
+    assert diag.m3c_budget_invariant_holds, (
+        f"m3c_budget_invariant_holds=False: pre_m3_used={diag.m3c_pre_m3_used}, "
+        f"total={diag.fresh_official_scores}, max=60"
+    )
+
+
+def test_m3c_zero_pre_m3_alloc_with_explicit_seed_budget():
+    """Edge case: when _pre_m3_total=0, explicit seed_discovery_score_budget must not fire.
+
+    seed_discovery_score_budget=60 with m3c_pre_m3_budget=0 and refinement+line-search
+    enabled must result in zero pre-M3 fresh scores.
+    """
+    bm = _bm()
+    gen_cfg = _m3c_gen_cfg(
+        m3c_pre_m3_budget=0,
+        m3c_m3a_reserved_budget=5,
+        m3c_m3b_reserved_budget=5,
+        refinement_around_winners=True,
+        refinement_top_k=2,
+        line_search_around_winners=True,
+        line_search_top_k=2,
+    )
+    score_cfg = CandidateScoringConfig(
+        max_official_scores=60,
+        seed_discovery_score_budget=60,
+    )
+    cands = generate_candidates(bm, gen_cfg)
+    _best, _ranked, diag = score_and_select(cands, bm, plc=None,
+                                             scoring_config=score_cfg,
+                                             generation_config=gen_cfg)
+
+    assert diag.m3c_pre_m3_used == 0, (
+        f"Pre-M3 fresh scores={diag.m3c_pre_m3_used} must be 0 when _pre_m3_total=0. "
+        f"seed_discovery_score_budget=60 must be clamped to 0."
+    )
+    assert diag.m3c_budget_invariant_holds, (
+        f"m3c_budget_invariant_holds=False"
+    )
+
+
 def test_m3c_negative_budget_values_do_not_expand_total_budget():
     """Negative configured slices must not make later allocations exceed the global max."""
     bm = _bm()
