@@ -42,6 +42,13 @@ class CandidateGenerationConfig:
     m3b_cluster_refinement: bool = False
     m3b_top_k_clusters: int = 32       # default for m3b-default; smoke uses 8
     m3b_score_budget: Optional[int] = None  # None = use whatever remains from global budget
+    # M3C budget allocation (slice-1: deterministic pre-M3 / M3A / M3B slices)
+    # Disabled by default — existing M2B/M3A/M3B behavior is unchanged when False.
+    m3c_budget_allocation: bool = False
+    m3c_pre_m3_budget: Optional[int] = None      # None → max_official_scores − m3a − m3b
+    m3c_m3a_reserved_budget: Optional[int] = None  # None → 5 when M3C enabled
+    m3c_m3b_reserved_budget: Optional[int] = None  # None → 5 when M3C enabled
+    m3c_rollover_unused_budget: bool = True
 
 
 @dataclass(frozen=True)
@@ -153,6 +160,10 @@ class ScoringDiagnostics:
     m3a_best_score: Optional[float] = None
     m3a_best_delta: Optional[float] = None
     m3a_winner_source: str = ""  # "original_raw" | "m2b_final" | "m3a_pair_refinement"
+    m3a_valid_count: int = 0         # valid non-duplicate M3A candidates before frontier selection
+    m3a_admitted_count: int = 0      # candidates admitted into the scoring frontier
+    m3a_not_admitted_count: int = 0  # candidates outside the frontier (not budget-exhausted)
+    m3a_selectable: bool = False     # True when M3A frontier is fully scored (no exclusion)
     # M3B cluster-refinement diagnostics (populated when m3b_cluster_refinement=True)
     m3b_clusters_considered: int = 0
     m3b_candidates_generated: int = 0
@@ -171,6 +182,18 @@ class ScoringDiagnostics:
     m3b_fresh_scores: int = 0
     m3b_cache_hits: int = 0
     m3b_best_score: Optional[float] = None
+    m3b_admitted_count: int = 0      # candidates admitted into the scoring frontier
+    m3b_not_admitted_count: int = 0  # candidates outside the frontier (not budget-exhausted)
+    # M3C budget-allocation diagnostics (populated when m3c_budget_allocation=True)
+    m3c_enabled: bool = False
+    m3c_pre_m3_budget_alloc: Optional[int] = None
+    m3c_m3a_budget_alloc: Optional[int] = None
+    m3c_m3b_budget_alloc: Optional[int] = None
+    m3c_pre_m3_used: int = 0
+    m3c_m3a_used: int = 0
+    m3c_m3b_used: int = 0
+    m3c_rollover_to_m3b: int = 0
+    m3c_budget_invariant_holds: bool = True
 
 
 @dataclass

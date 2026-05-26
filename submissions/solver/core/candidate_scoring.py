@@ -829,14 +829,57 @@ def score_and_select(
     _has_ls = gen_cfg is not None and gen_cfg.line_search_around_winners
     _has_ref = gen_cfg is not None and gen_cfg.refinement_around_winners
 
+    # --- M3C deterministic budget allocation ---
+    # Gated by m3c_budget_allocation flag; disabled by default so existing behavior is unchanged.
+    _m3c_enabled = gen_cfg is not None and getattr(gen_cfg, "m3c_budget_allocation", False)
+    _m3c_pre_m3_alloc: Optional[int] = None
+    _m3c_m3a_alloc: Optional[int] = None
+    _m3c_m3b_alloc: Optional[int] = None
+    _m3c_rollover_enabled: bool = True
+    _m3c_rollover_to_m3b: int = 0
+
+    if _m3c_enabled and cfg.max_official_scores is not None:
+        _raw_pre = getattr(gen_cfg, "m3c_pre_m3_budget", None)
+        _raw_m3a = getattr(gen_cfg, "m3c_m3a_reserved_budget", None)
+        _raw_m3b = getattr(gen_cfg, "m3c_m3b_reserved_budget", None)
+        _m3c_rollover_enabled = bool(getattr(gen_cfg, "m3c_rollover_unused_budget", True))
+        _configured_m3a = max(0, int(_raw_m3a)) if _raw_m3a is not None else 5
+        _configured_m3b = max(0, int(_raw_m3b)) if _raw_m3b is not None else 5
+        _configured_pre = (
+            max(0, int(_raw_pre)) if _raw_pre is not None
+            else max(0, cfg.max_official_scores - _configured_m3a - _configured_m3b)
+        )
+        # Normalize: late-stage reservation first (M3A → M3B → pre-M3).
+        # M3A and M3B always receive their full reserved slices before pre-M3 is allocated.
+        # This guarantees total allocated scores never exceed max_official_scores for any config.
+        _remaining = cfg.max_official_scores
+        _m3c_m3a_alloc = min(_configured_m3a, _remaining)
+        _remaining -= _m3c_m3a_alloc
+        _m3c_m3b_alloc = min(_configured_m3b, _remaining)
+        _remaining -= _m3c_m3b_alloc
+        _m3c_pre_m3_alloc = min(_configured_pre, _remaining)
+        assert _m3c_pre_m3_alloc + _m3c_m3a_alloc + _m3c_m3b_alloc <= cfg.max_official_scores
+
+    # Effective total for passes 1-3 (pre-M3 pool).
+    # When M3C is enabled this is the reserved pre-M3 slice; otherwise it is the global cap.
+    _pre_m3_total: Optional[int] = (
+        _m3c_pre_m3_alloc if (_m3c_enabled and _m3c_pre_m3_alloc is not None)
+        else cfg.max_official_scores
+    )
+
     _seed_budget: Optional[int] = cfg.seed_discovery_score_budget
     _ref_budget: Optional[int] = cfg.refinement_score_budget
 
-    if cfg.max_official_scores is not None and (_has_ls or _has_ref):
-        total = cfg.max_official_scores
+    if _pre_m3_total is not None and (_has_ls or _has_ref):
+        total = _pre_m3_total
         if _seed_budget is None:
-            # Seed discovery: ~32/60 of total, at least 3
-            _seed_budget = max(3, total * 32 // 60)
+            # Seed discovery: ~32/60 of total.
+            # When M3C is enabled, skip the hard minimum so a zero pre-M3 allocation
+            # is honored exactly (no fresh scores fired from the global pool).
+            if _m3c_enabled:
+                _seed_budget = total * 32 // 60
+            else:
+                _seed_budget = max(3, total * 32 // 60)
         if _ref_budget is None and _has_ref:
             # Refinement: at least 3 slots per refinement seed (top_k seeds + 1 combo)
             # so round-robin scoring reaches the 2nd-best candidate per seed in case
@@ -846,7 +889,7 @@ def score_and_select(
             )
             _ref_budget = max(_min_ref_by_seeds, total * 10 // 60)
 
-    _pass1_max: Optional[int] = _seed_budget if (_has_ls or _has_ref) else cfg.max_official_scores
+    _pass1_max: Optional[int] = _seed_budget if (_has_ls or _has_ref) else _pre_m3_total
     _pass2_max: Optional[int] = _ref_budget
 
     # --- Timing and rank accumulators ---
@@ -1048,8 +1091,8 @@ def score_and_select(
                 _queues = next_round
 
             _remaining_after_pass1 = (
-                None if cfg.max_official_scores is None
-                else max(0, cfg.max_official_scores - pass1_scored_count)
+                None if _pre_m3_total is None
+                else max(0, _pre_m3_total - pass1_scored_count)
             )
             _pass2_budget = _remaining_after_pass1
             if _pass2_max is not None and _pass2_budget is not None:
@@ -1116,8 +1159,8 @@ def score_and_select(
                 total_dup_count += pass3_dup_count
 
                 _remaining_for_ls = (
-                    None if cfg.max_official_scores is None
-                    else max(0, cfg.max_official_scores - pass1_scored_count - pass2_scored_count)
+                    None if _pre_m3_total is None
+                    else max(0, _pre_m3_total - pass1_scored_count - pass2_scored_count)
                 )
                 pass3_scored_count = _score_line_search_ordered(
                     ls_scored,
@@ -1162,6 +1205,9 @@ def score_and_select(
     _m3a_cache_hits = 0
     _m3a_best_score: Optional[float] = None
     _m3a_best_delta: Optional[float] = None
+    _m3a_valid_count = 0
+    _m3a_admitted_count = 0
+    _m3a_not_admitted = 0
 
     if gen_cfg is not None and getattr(gen_cfg, "m3a_pair_refinement", False):
         from submissions.solver.core.m3a_pair_enumeration import enumerate_net_coupled_pairs
@@ -1228,38 +1274,72 @@ def score_and_select(
             total_dup_count += _pass4_dup_count
 
             # Compute remaining budget for M3A.
-            _already_used = pass1_scored_count + pass2_scored_count + pass3_scored_count
-            _m3a_budget_config = getattr(gen_cfg, "m3a_score_budget", None)
-            _remaining_global = (
-                None if cfg.max_official_scores is None
-                else max(0, cfg.max_official_scores - _already_used)
-            )
-            if _m3a_budget_config is not None and _remaining_global is not None:
-                _m3a_budget = min(int(_m3a_budget_config), _remaining_global)
-            elif _m3a_budget_config is not None:
-                _m3a_budget = int(_m3a_budget_config)
+            # When M3C is enabled, use the reserved M3A slice directly (independent of
+            # how much of the pre-M3 pool was consumed).  Without M3C, use the
+            # existing fallback: whatever remains from the global cap.
+            if _m3c_enabled and _m3c_m3a_alloc is not None:
+                _m3a_budget: Optional[int] = _m3c_m3a_alloc
             else:
-                _m3a_budget = _remaining_global
+                _already_used = pass1_scored_count + pass2_scored_count + pass3_scored_count
+                _m3a_budget_config = getattr(gen_cfg, "m3a_score_budget", None)
+                _remaining_global = (
+                    None if cfg.max_official_scores is None
+                    else max(0, cfg.max_official_scores - _already_used)
+                )
+                if _m3a_budget_config is not None and _remaining_global is not None:
+                    _m3a_budget = min(int(_m3a_budget_config), _remaining_global)
+                elif _m3a_budget_config is not None:
+                    _m3a_budget = int(_m3a_budget_config)
+                else:
+                    _m3a_budget = _remaining_global
 
-            # Score valid, non-duplicate M3A candidates in generation order.
-            _m3a_score_indices = [
+            # Collect all valid non-duplicate M3A candidates in generation order.
+            _m3a_all_valid_indices = [
                 idx for idx, msc in enumerate(m3a_scored_list)
                 if msc.valid and msc.duplicate_of is None
             ]
-            pass4_scored_count = _score_batch(
-                m3a_scored_list,
-                _m3a_score_indices,
-                benchmark,
-                plc,
-                max_scores=_m3a_budget,
-                already_scored=0,
-                cache=score_cache,
-                benchmark_name=benchmark_name,
-                timing_records=timing_records,
-                timing_names=timing_names,
-                skipped_by_budget_acc=skipped_by_budget_acc,
-                scoring_rank_counter=scoring_rank_counter,
-            )
+            _m3a_valid_count = len(_m3a_all_valid_indices)
+
+            if _m3c_enabled and _m3c_m3a_alloc is not None:
+                # Admit only the top m3c_m3a_alloc candidates to the scoring frontier.
+                # Candidates outside the frontier are not budget-exhausted — they are simply
+                # not admitted. Only within-frontier exhaustion triggers M3A exclusion.
+                _m3a_frontier_indices = _m3a_all_valid_indices[:_m3c_m3a_alloc]
+                _m3a_outside_frontier = _m3a_all_valid_indices[_m3c_m3a_alloc:]
+                _m3a_admitted_count = len(_m3a_frontier_indices)
+                _m3a_not_admitted = len(_m3a_outside_frontier)
+                for idx in _m3a_outside_frontier:
+                    m3a_scored_list[idx].metadata.setdefault("skip_reason", "m3c_not_admitted")
+                pass4_scored_count = _score_batch(
+                    m3a_scored_list,
+                    _m3a_frontier_indices,
+                    benchmark,
+                    plc,
+                    max_scores=_m3c_m3a_alloc,
+                    already_scored=0,
+                    cache=score_cache,
+                    benchmark_name=benchmark_name,
+                    timing_records=timing_records,
+                    timing_names=timing_names,
+                    skipped_by_budget_acc=skipped_by_budget_acc,
+                    scoring_rank_counter=scoring_rank_counter,
+                )
+            else:
+                _m3a_admitted_count = _m3a_valid_count
+                pass4_scored_count = _score_batch(
+                    m3a_scored_list,
+                    _m3a_all_valid_indices,
+                    benchmark,
+                    plc,
+                    max_scores=_m3a_budget,
+                    already_scored=0,
+                    cache=score_cache,
+                    benchmark_name=benchmark_name,
+                    timing_records=timing_records,
+                    timing_names=timing_names,
+                    skipped_by_budget_acc=skipped_by_budget_acc,
+                    scoring_rank_counter=scoring_rank_counter,
+                )
 
             # Propagate deltas and collect M3A-specific stats.
             for msc in m3a_scored_list:
@@ -1300,6 +1380,8 @@ def score_and_select(
     _m3b_best_score: Optional[float] = None
     _m3b_best_delta: Optional[float] = None
     _m3b_best_candidate: str = ""
+    _m3b_admitted_count = 0
+    _m3b_not_admitted = 0
 
     if gen_cfg is not None and getattr(gen_cfg, "m3b_cluster_refinement", False):
         from submissions.solver.core.m3b_cluster_enumeration import enumerate_net_coupled_triples
@@ -1369,41 +1451,75 @@ def score_and_select(
             total_dup_count += _pass5_dup_count
 
             # Compute remaining budget for M3B.
-            _already_used_m3b = (
-                pass1_scored_count + pass2_scored_count
-                + pass3_scored_count + pass4_scored_count
-            )
-            _m3b_budget_config = getattr(gen_cfg, "m3b_score_budget", None)
-            _remaining_global_m3b = (
-                None if cfg.max_official_scores is None
-                else max(0, cfg.max_official_scores - _already_used_m3b)
-            )
-            if _m3b_budget_config is not None and _remaining_global_m3b is not None:
-                _m3b_budget = min(int(_m3b_budget_config), _remaining_global_m3b)
-            elif _m3b_budget_config is not None:
-                _m3b_budget = int(_m3b_budget_config)
+            # When M3C is enabled, use the reserved M3B slice plus any rollover from the
+            # unused M3A allocation.  Without M3C, use the existing fallback.
+            if _m3c_enabled and _m3c_m3b_alloc is not None:
+                if _m3c_rollover_enabled and _m3c_m3a_alloc is not None:
+                    _m3c_rollover_to_m3b = max(0, _m3c_m3a_alloc - pass4_scored_count)
+                _m3b_budget: Optional[int] = _m3c_m3b_alloc + _m3c_rollover_to_m3b
             else:
-                _m3b_budget = _remaining_global_m3b
+                _already_used_m3b = (
+                    pass1_scored_count + pass2_scored_count
+                    + pass3_scored_count + pass4_scored_count
+                )
+                _m3b_budget_config = getattr(gen_cfg, "m3b_score_budget", None)
+                _remaining_global_m3b = (
+                    None if cfg.max_official_scores is None
+                    else max(0, cfg.max_official_scores - _already_used_m3b)
+                )
+                if _m3b_budget_config is not None and _remaining_global_m3b is not None:
+                    _m3b_budget = min(int(_m3b_budget_config), _remaining_global_m3b)
+                elif _m3b_budget_config is not None:
+                    _m3b_budget = int(_m3b_budget_config)
+                else:
+                    _m3b_budget = _remaining_global_m3b
 
-            # Score valid, non-duplicate M3B candidates in generation order.
-            _m3b_score_indices = [
+            # Collect all valid non-duplicate M3B candidates in generation order.
+            _m3b_all_valid_indices = [
                 idx for idx, msc in enumerate(m3b_scored_list)
                 if msc.valid and msc.duplicate_of is None
             ]
-            pass5_scored_count = _score_batch(
-                m3b_scored_list,
-                _m3b_score_indices,
-                benchmark,
-                plc,
-                max_scores=_m3b_budget,
-                already_scored=0,
-                cache=score_cache,
-                benchmark_name=benchmark_name,
-                timing_records=timing_records,
-                timing_names=timing_names,
-                skipped_by_budget_acc=skipped_by_budget_acc,
-                scoring_rank_counter=scoring_rank_counter,
-            )
+
+            if _m3c_enabled and _m3c_m3b_alloc is not None and _m3b_budget is not None:
+                # Admit only the top _m3b_budget candidates (alloc + rollover) to the frontier.
+                # Candidates outside the frontier are not budget-exhausted — they are simply
+                # not admitted. Only within-frontier exhaustion triggers M3B exclusion.
+                _m3b_frontier_indices = _m3b_all_valid_indices[:_m3b_budget]
+                _m3b_outside_frontier = _m3b_all_valid_indices[_m3b_budget:]
+                _m3b_admitted_count = len(_m3b_frontier_indices)
+                _m3b_not_admitted = len(_m3b_outside_frontier)
+                for idx in _m3b_outside_frontier:
+                    m3b_scored_list[idx].metadata.setdefault("skip_reason", "m3c_not_admitted")
+                pass5_scored_count = _score_batch(
+                    m3b_scored_list,
+                    _m3b_frontier_indices,
+                    benchmark,
+                    plc,
+                    max_scores=_m3b_budget,
+                    already_scored=0,
+                    cache=score_cache,
+                    benchmark_name=benchmark_name,
+                    timing_records=timing_records,
+                    timing_names=timing_names,
+                    skipped_by_budget_acc=skipped_by_budget_acc,
+                    scoring_rank_counter=scoring_rank_counter,
+                )
+            else:
+                _m3b_admitted_count = len(_m3b_all_valid_indices)
+                pass5_scored_count = _score_batch(
+                    m3b_scored_list,
+                    _m3b_all_valid_indices,
+                    benchmark,
+                    plc,
+                    max_scores=_m3b_budget,
+                    already_scored=0,
+                    cache=score_cache,
+                    benchmark_name=benchmark_name,
+                    timing_records=timing_records,
+                    timing_names=timing_names,
+                    skipped_by_budget_acc=skipped_by_budget_acc,
+                    scoring_rank_counter=scoring_rank_counter,
+                )
 
             # Propagate deltas and collect M3B-specific stats.
             for msc in m3b_scored_list:
@@ -1430,6 +1546,19 @@ def score_and_select(
         + pass4_scored_count + pass5_scored_count
     )
     fresh_official_scores = candidates_officially_scored  # fresh only (cache hits excluded)
+
+    # --- M3C budget invariant ---
+    _m3c_pre_m3_fresh_total = pass1_scored_count + pass2_scored_count + pass3_scored_count
+    if not _m3c_enabled or cfg.max_official_scores is None:
+        _m3c_budget_invariant_holds = True
+    else:
+        _m3c_budget_invariant_holds = (
+            fresh_official_scores <= cfg.max_official_scores
+            and (
+                _m3c_pre_m3_alloc is None
+                or _m3c_pre_m3_fresh_total <= _m3c_pre_m3_alloc
+            )
+        )
 
     # --- Post-process: ensure all unscored candidates have a skip_reason ---
     for sc in scored:
@@ -1637,6 +1766,15 @@ def score_and_select(
             if best is not None and best.family == "m3a_pair_refinement"
             else ("original_raw" if best is not None and best.name == "original_raw" else "m2b_final")
         ) if best is not None else "",
+        m3a_valid_count=_m3a_valid_count,
+        m3a_admitted_count=_m3a_admitted_count,
+        m3a_not_admitted_count=_m3a_not_admitted,
+        m3a_selectable=(
+            not _m3a_budget_exhausted and any(
+                s.family == "m3a_pair_refinement" and s.valid and s.was_scored and s.proxy_cost is not None
+                for s in scored
+            )
+        ),
         m3b_clusters_considered=_m3b_clusters_considered,
         m3b_candidates_generated=_m3b_candidates_generated,
         m3b_valid=_m3b_valid,
@@ -1660,5 +1798,16 @@ def score_and_select(
         m3b_fresh_scores=_m3b_fresh_scores,
         m3b_cache_hits=_m3b_cache_hits,
         m3b_best_score=_m3b_best_score,
+        m3b_admitted_count=_m3b_admitted_count,
+        m3b_not_admitted_count=_m3b_not_admitted,
+        m3c_enabled=_m3c_enabled,
+        m3c_pre_m3_budget_alloc=_m3c_pre_m3_alloc,
+        m3c_m3a_budget_alloc=_m3c_m3a_alloc,
+        m3c_m3b_budget_alloc=_m3c_m3b_alloc,
+        m3c_pre_m3_used=_m3c_pre_m3_fresh_total,
+        m3c_m3a_used=pass4_scored_count,
+        m3c_m3b_used=pass5_scored_count,
+        m3c_rollover_to_m3b=_m3c_rollover_to_m3b,
+        m3c_budget_invariant_holds=_m3c_budget_invariant_holds,
     )
     return best, ranked, diagnostics

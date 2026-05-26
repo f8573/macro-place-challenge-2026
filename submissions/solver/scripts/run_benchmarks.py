@@ -309,6 +309,103 @@ _PROFILES: Dict[str, Dict] = {
         "m3b_top_k_clusters": 32,
         "m3b_score_budget": None,
     },
+    # --- M3C profiles ---
+    "m3c-smoke": {
+        "benchmarks": ["ibm01", "ibm02", "ibm03"],
+        "repeat": 1,
+        "output": ["console", "json"],
+        "description": "M3C smoke: deterministic budget allocation, fast CI sanity validation",
+        "show_candidates": True,
+        "show_audit": True,
+        "require_official": True,
+        "only_original_neighborhood": True,
+        "candidate_budget": 80,
+        "neighborhood_macro_limit": 20,
+        "neighborhood_step_profile": "medium",
+        "refinement_around_winners": True,
+        "refinement_top_k": 5,
+        "refinement_combo_size": 2,
+        "refinement_seed_strategy": "diverse",
+        "refinement_exploration_seeds": 1,
+        "line_search_around_winners": True,
+        "line_search_top_k": 3,
+        "line_search_max_scale": 4.0,
+        "line_search_stop_after_worse": 2,
+        "max_official_scores": 60,
+        "m3a_pair_refinement": True,
+        "m3a_top_k_pairs": 8,
+        "m3b_cluster_refinement": True,
+        "m3b_top_k_clusters": 4,
+        "m3c_budget_allocation": True,
+        "m3c_pre_m3_budget": 50,
+        "m3c_m3a_reserved_budget": 5,
+        "m3c_m3b_reserved_budget": 5,
+        "m3c_rollover_unused_budget": True,
+    },
+    "m3c-default": {
+        "benchmarks": ["ibm01", "ibm02", "ibm03"],
+        "repeat": 1,
+        "output": ["console", "json"],
+        "description": "M3C default: reserved M3A/M3B slices within 60-score budget, cold-run vs m2b-final",
+        "show_candidates": True,
+        "show_audit": True,
+        "require_official": True,
+        "only_original_neighborhood": True,
+        "candidate_budget": 80,
+        "neighborhood_macro_limit": 20,
+        "neighborhood_step_profile": "medium",
+        "refinement_around_winners": True,
+        "refinement_top_k": 5,
+        "refinement_combo_size": 2,
+        "refinement_seed_strategy": "diverse",
+        "refinement_exploration_seeds": 1,
+        "line_search_around_winners": True,
+        "line_search_top_k": 3,
+        "line_search_max_scale": 4.0,
+        "line_search_stop_after_worse": 2,
+        "max_official_scores": 60,
+        "m3a_pair_refinement": True,
+        "m3a_top_k_pairs": 64,
+        "m3b_cluster_refinement": True,
+        "m3b_top_k_clusters": 32,
+        "m3c_budget_allocation": True,
+        "m3c_pre_m3_budget": 50,
+        "m3c_m3a_reserved_budget": 5,
+        "m3c_m3b_reserved_budget": 5,
+        "m3c_rollover_unused_budget": True,
+    },
+    "m3c-budget-stress": {
+        "benchmarks": ["ibm01", "ibm02", "ibm03"],
+        "repeat": 1,
+        "output": ["console", "json"],
+        "description": "M3C budget-stress: tiny budget forces graceful fallback, verifies partial-slice exclusion",
+        "show_candidates": True,
+        "show_audit": True,
+        "require_official": True,
+        "only_original_neighborhood": True,
+        "candidate_budget": 80,
+        "neighborhood_macro_limit": 20,
+        "neighborhood_step_profile": "medium",
+        "refinement_around_winners": True,
+        "refinement_top_k": 5,
+        "refinement_combo_size": 2,
+        "refinement_seed_strategy": "diverse",
+        "refinement_exploration_seeds": 1,
+        "line_search_around_winners": True,
+        "line_search_top_k": 3,
+        "line_search_max_scale": 4.0,
+        "line_search_stop_after_worse": 2,
+        "max_official_scores": 10,   # very tight: pre_m3=8, m3a=1, m3b=1
+        "m3a_pair_refinement": True,
+        "m3a_top_k_pairs": 64,
+        "m3b_cluster_refinement": True,
+        "m3b_top_k_clusters": 32,
+        "m3c_budget_allocation": True,
+        "m3c_pre_m3_budget": 8,
+        "m3c_m3a_reserved_budget": 1,
+        "m3c_m3b_reserved_budget": 1,
+        "m3c_rollover_unused_budget": True,
+    },
 }
 
 
@@ -454,6 +551,7 @@ def _run_one(
         "score_is_degenerate": diag.score_is_degenerate,
         "num_unique_scores": diag.num_unique_scores,
         "selected_due_to": diag.selected_due_to,
+        "max_official_scores": scoring_config.max_official_scores,
         "official_scored_count": diag.candidates_officially_scored,
         "fresh_official_scores": diag.fresh_official_scores,
         "duplicate_skipped_count": diag.duplicate_count,
@@ -483,6 +581,30 @@ def _run_one(
         "admission_prelegal_overlap_candidates": diag.admission_prelegal_overlap_candidates,
         "admission_legalized_successfully": diag.admission_legalized_successfully,
         "admission_legalization_failed": diag.admission_legalization_failed,
+        "m3a_valid_count": diag.m3a_valid_count,
+        "m3a_admitted_count": diag.m3a_admitted_count,
+        "m3a_not_admitted_count": diag.m3a_not_admitted_count,
+        "m3a_candidates_scored": diag.m3a_candidates_scored,
+        "m3a_skipped_budget": diag.m3a_skipped_budget,
+        "m3a_selectable": diag.m3a_selectable,
+        "m3b_valid": diag.m3b_valid,
+        "m3b_invalid": diag.m3b_invalid,
+        "m3b_duplicates": diag.m3b_duplicates,
+        "m3b_scored": diag.m3b_scored,
+        "m3b_skipped_budget": diag.m3b_skipped_budget,
+        "m3b_budget_exhausted": diag.m3b_budget_exhausted,
+        "m3b_admitted_count": diag.m3b_admitted_count,
+        "m3b_not_admitted_count": diag.m3b_not_admitted_count,
+        "m3b_selectable": diag.m3b_selectable,
+        "m3c_enabled": diag.m3c_enabled,
+        "m3c_pre_m3_budget_alloc": diag.m3c_pre_m3_budget_alloc,
+        "m3c_m3a_budget_alloc": diag.m3c_m3a_budget_alloc,
+        "m3c_m3b_budget_alloc": diag.m3c_m3b_budget_alloc,
+        "m3c_pre_m3_used": diag.m3c_pre_m3_used,
+        "m3c_m3a_used": diag.m3c_m3a_used,
+        "m3c_m3b_used": diag.m3c_m3b_used,
+        "m3c_rollover_to_m3b": diag.m3c_rollover_to_m3b,
+        "m3c_budget_invariant_holds": diag.m3c_budget_invariant_holds,
     }
 
     if show_candidates:
@@ -578,6 +700,32 @@ def _print_audit(row: Dict) -> None:
         f"scores={row['official_scored_count']}  duplicates={row['duplicate_skipped_count']}  "
         f"prefiltered={row['prefiltered_count']}  invariant={row['invariant_holds']}"
     )
+    if row.get("m3c_enabled"):
+        print(
+            "  M3C Budget:"
+            f" pre_alloc={row.get('m3c_pre_m3_budget_alloc')} pre_used={row.get('m3c_pre_m3_used')}"
+            f" m3a_alloc={row.get('m3c_m3a_budget_alloc')} m3a_used={row.get('m3c_m3a_used')}"
+            f" m3b_alloc={row.get('m3c_m3b_budget_alloc')} m3b_used={row.get('m3c_m3b_used')}"
+            f" rollover_to_m3b={row.get('m3c_rollover_to_m3b')}"
+            f" invariant={row.get('m3c_budget_invariant_holds')}"
+        )
+        print(
+            "  M3C Admission:"
+            f" m3a_valid={row.get('m3a_valid_count')}"
+            f" m3a_admitted={row.get('m3a_admitted_count')}"
+            f" m3a_not_admitted={row.get('m3a_not_admitted_count')}"
+            f" m3a_scored={row.get('m3a_candidates_scored')}"
+            f" m3a_skipped={row.get('m3a_skipped_budget')}"
+            f" m3a_selectable={row.get('m3a_selectable')}"
+            f" m3b_valid={row.get('m3b_valid')}"
+            f" m3b_invalid={row.get('m3b_invalid')}"
+            f" m3b_duplicates={row.get('m3b_duplicates')}"
+            f" m3b_admitted={row.get('m3b_admitted_count')}"
+            f" m3b_not_admitted={row.get('m3b_not_admitted_count')}"
+            f" m3b_scored={row.get('m3b_scored')}"
+            f" m3b_skipped={row.get('m3b_skipped_budget')}"
+            f" m3b_selectable={row.get('m3b_selectable')}"
+        )
     refinement_gen = row.get("refinement_candidates_generated", 0)
     combo_gen = row.get("combo_candidates_generated", 0)
     if refinement_gen or combo_gen:
@@ -676,6 +824,11 @@ def run_profile(
         m3b_cluster_refinement=profile.get("m3b_cluster_refinement", False),
         m3b_top_k_clusters=profile.get("m3b_top_k_clusters", 32),
         m3b_score_budget=profile.get("m3b_score_budget", None),
+        m3c_budget_allocation=profile.get("m3c_budget_allocation", False),
+        m3c_pre_m3_budget=profile.get("m3c_pre_m3_budget", None),
+        m3c_m3a_reserved_budget=profile.get("m3c_m3a_reserved_budget", None),
+        m3c_m3b_reserved_budget=profile.get("m3c_m3b_reserved_budget", None),
+        m3c_rollover_unused_budget=profile.get("m3c_rollover_unused_budget", True),
     )
     score_cfg = scoring_config or CandidateScoringConfig(
         max_official_scores=profile.get("max_official_scores"),
@@ -848,6 +1001,11 @@ def main():
         m3b_cluster_refinement=profile.get("m3b_cluster_refinement", False),
         m3b_top_k_clusters=profile.get("m3b_top_k_clusters", 32),
         m3b_score_budget=profile.get("m3b_score_budget", None),
+        m3c_budget_allocation=profile.get("m3c_budget_allocation", False),
+        m3c_pre_m3_budget=profile.get("m3c_pre_m3_budget", None),
+        m3c_m3a_reserved_budget=profile.get("m3c_m3a_reserved_budget", None),
+        m3c_m3b_reserved_budget=profile.get("m3c_m3b_reserved_budget", None),
+        m3c_rollover_unused_budget=profile.get("m3c_rollover_unused_budget", True),
     )
     score_cfg = CandidateScoringConfig(
         max_official_scores=args.max_official_scores if args.max_official_scores is not None else profile.get("max_official_scores"),
