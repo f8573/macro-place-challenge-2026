@@ -49,6 +49,14 @@ class CandidateGenerationConfig:
     m3c_m3a_reserved_budget: Optional[int] = None  # None → 5 when M3C enabled
     m3c_m3b_reserved_budget: Optional[int] = None  # None → 5 when M3C enabled
     m3c_rollover_unused_budget: bool = True
+    # M4B pass (sixth-stage, legalization-aware regional repair after M3B)
+    m4b_region_repair: bool = False
+    m4b_reserved_scores: int = 20
+    m4b_grid_dims: tuple[int, int] = (3, 3)
+    m4b_min_macros_per_region: int = 2
+    m4b_max_combos_per_region: int = 16
+    m4b_legalization_max_displacement_um: float = 200.0
+    m4b_perturbation_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -194,6 +202,18 @@ class ScoringDiagnostics:
     m3c_m3b_used: int = 0
     m3c_rollover_to_m3b: int = 0
     m3c_budget_invariant_holds: bool = True
+    # M4B regional repair diagnostics (populated when m4b_region_repair=True)
+    m4b_reserved_scores: int = 0
+    m4b_generated_count: int = 0
+    m4b_legalized_count: int = 0
+    m4b_legalization_failed_count: int = 0
+    m4b_duplicate_after_legalization_count: int = 0
+    m4b_admitted_count: int = 0
+    m4b_not_admitted_count: int = 0
+    m4b_scored_count: int = 0
+    m4b_skipped_budget: int = 0
+    m4b_raw_legalized_rate: float = 0.0
+    m4b_adjusted_legalized_rate: float = 0.0
 
 
 @dataclass

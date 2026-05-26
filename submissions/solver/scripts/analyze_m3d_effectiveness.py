@@ -45,7 +45,9 @@ _BENCHMARK_SUMMARY_FIELDS: Tuple[str, ...] = (
     "late_stage_num_near_tie",
 )
 
-_LATE_STAGE_FAMILIES = frozenset({"m3a_pair_refinement", "m3b_cluster_refinement"})
+_LATE_STAGE_FAMILIES = frozenset(
+    {"m3a_pair_refinement", "m3b_cluster_refinement", "m4b_region_repair"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +295,7 @@ def write_m3d_outputs(
     benchmark_summaries: List[Dict[str, Any]],
     classifications: List[Dict[str, Any]],
     config: Dict[str, Any],
+    output_prefix: str = "m3d",
 ) -> None:
     """Write all M3D output artifacts to output_dir.
 
@@ -304,20 +307,20 @@ def write_m3d_outputs(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    save_csv(candidate_rows, output_dir / "m3d_candidate_effectiveness.csv")
-    save_csv(family_summaries, output_dir / "m3d_family_summary.csv")
+    save_csv(candidate_rows, output_dir / f"{output_prefix}_candidate_effectiveness.csv")
+    save_csv(family_summaries, output_dir / f"{output_prefix}_family_summary.csv")
     _write_csv_with_fields(
         benchmark_summaries,
         _BENCHMARK_SUMMARY_FIELDS,
-        output_dir / "m3d_benchmark_summary.csv",
+        output_dir / f"{output_prefix}_benchmark_summary.csv",
     )
 
     md = render_findings_md(
         benchmark_summaries, family_summaries, classifications, candidate_rows, config
     )
-    (output_dir / "m3d_findings.md").write_text(md, encoding="utf-8")
+    (output_dir / f"{output_prefix}_findings.md").write_text(md, encoding="utf-8")
 
-    json_path = output_dir / "m3d_findings.json"
+    json_path = output_dir / f"{output_prefix}_findings.json"
     if config.get("json"):
         from submissions.solver.core.io import save_json  # noqa: PLC0415
 
@@ -412,6 +415,11 @@ def main() -> None:
         help="Directory for output artifacts.",
     )
     parser.add_argument(
+        "--output-prefix",
+        default="m3d",
+        help="Prefix for CSV/Markdown artifact filenames (default: m3d).",
+    )
+    parser.add_argument(
         "--clear-score-cache",
         action="store_true",
         help="Clear the score cache file before running.",
@@ -492,6 +500,13 @@ def main() -> None:
         m3c_m3a_reserved_budget=profile.get("m3c_m3a_reserved_budget", None),
         m3c_m3b_reserved_budget=profile.get("m3c_m3b_reserved_budget", None),
         m3c_rollover_unused_budget=profile.get("m3c_rollover_unused_budget", True),
+        m4b_region_repair=profile.get("m4b_region_repair", False),
+        m4b_reserved_scores=profile.get("m4b_reserved_scores", 20),
+        m4b_grid_dims=tuple(profile.get("m4b_grid_dims", (3, 3))),
+        m4b_min_macros_per_region=profile.get("m4b_min_macros_per_region", 2),
+        m4b_max_combos_per_region=profile.get("m4b_max_combos_per_region", 16),
+        m4b_legalization_max_displacement_um=profile.get("m4b_legalization_max_displacement_um", 200.0),
+        m4b_perturbation_fraction=profile.get("m4b_perturbation_fraction", 0.5),
     )
     max_scores = (
         args.max_official_scores
@@ -585,14 +600,15 @@ def main() -> None:
         benchmark_summaries=benchmark_summaries,
         classifications=classifications,
         config=config,
+        output_prefix=args.output_prefix,
     )
 
     print(f"\nM3D artifacts written to: {output_dir.resolve()}")
     for fname in (
-        "m3d_candidate_effectiveness.csv",
-        "m3d_family_summary.csv",
-        "m3d_benchmark_summary.csv",
-        "m3d_findings.md",
+        f"{args.output_prefix}_candidate_effectiveness.csv",
+        f"{args.output_prefix}_family_summary.csv",
+        f"{args.output_prefix}_benchmark_summary.csv",
+        f"{args.output_prefix}_findings.md",
     ):
         print(f"  {output_dir / fname}")
 

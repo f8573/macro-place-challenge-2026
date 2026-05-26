@@ -1,4 +1,5 @@
 import importlib
+import csv
 import json
 import subprocess
 import sys
@@ -256,6 +257,114 @@ def test_prefilter_guard():
     )
     assert diagnostic["guard_fired"] is True
     assert diagnostic["spearman_rs"] is None
+
+
+def _write_m4a_input_fixture(input_dir: Path, prefix: str, profile: str) -> None:
+    input_dir.mkdir(parents=True, exist_ok=True)
+    with (input_dir / f"{prefix}_benchmark_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["benchmark", "profile", "selected_cost", "original_cost"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "benchmark": "ibm01",
+                "profile": profile,
+                "selected_cost": "0.95",
+                "original_cost": "1.0",
+            }
+        )
+    with (input_dir / f"{prefix}_family_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["benchmark", "profile", "family", "generated_count", "valid_count", "scored_count"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "benchmark": "ibm01",
+                "profile": profile,
+                "family": "m4b_region_repair",
+                "generated_count": "2",
+                "valid_count": "1",
+                "scored_count": "1",
+            }
+        )
+    with (input_dir / f"{prefix}_candidate_effectiveness.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "benchmark",
+                "profile",
+                "candidate_name",
+                "family",
+                "valid",
+                "duplicate",
+                "admitted",
+                "not_admitted",
+                "scored",
+                "skip_reason",
+                "proxy_cost",
+                "approx_delta",
+                "placement_hash",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "benchmark": "ibm01",
+                "profile": profile,
+                "candidate_name": "m4b_r0_m1_m2_centroid_shift",
+                "family": "m4b_region_repair",
+                "valid": "True",
+                "duplicate": "False",
+                "admitted": "True",
+                "not_admitted": "False",
+                "scored": "True",
+                "skip_reason": "scored",
+                "proxy_cost": "0.95",
+                "approx_delta": "-0.1",
+                "placement_hash": "abc12345",
+            }
+        )
+
+
+def test_input_prefix_default_reads_m3d_files(tmp_path):
+    _write_m4a_input_fixture(tmp_path, "m3d", "fixture-profile")
+    result, _, _ = m4a.analyze(
+        profile="fixture-profile",
+        benchmarks=["ibm01"],
+        official_epsilon=1e-5,
+        input_dir=tmp_path,
+        runner_json=tmp_path / "missing.json",
+    )
+    assert result["inputs"]["benchmark_summary"].endswith("m3d_benchmark_summary.csv")
+    assert result["benchmarks"]["ibm01"]["costs"]["selected_cost"] == 0.95
+
+
+def test_input_prefix_m4b_reads_m4b_files(tmp_path):
+    _write_m4a_input_fixture(tmp_path, "m4b", "m4b-default")
+    result, _, _ = m4a.analyze(
+        profile="m4b-default",
+        benchmarks=["ibm01"],
+        official_epsilon=1e-5,
+        input_dir=tmp_path,
+        input_prefix="m4b",
+        runner_json=tmp_path / "missing.json",
+    )
+    assert result["inputs"]["candidate_effectiveness"].endswith("m4b_candidate_effectiveness.csv")
+    assert result["benchmarks"]["ibm01"]["family_effectiveness"][0]["family"] == "m4b_region_repair"
+
+
+def test_m4b_family_contributes_to_valid_rate_local():
+    family_effectiveness = [
+        {"family": "m4b_region_repair", "generated_count": 4, "valid_count": 2},
+        {"family": "original", "generated_count": 2, "valid_count": 2},
+    ]
+    local_rate, baseline_rate = m4a.weighted_valid_rates(family_effectiveness)
+    assert local_rate == 0.5
+    assert baseline_rate == 1.0
 
 
 def test_output_contains_required_caveats(tmp_path):

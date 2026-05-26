@@ -28,6 +28,17 @@ _REQUIRED_FIELDS = (
     "selected_via_fallback",
     "placement_hash",
     "source_stage",
+    "generated",
+    "region_id",
+    "region_signature",
+    "moved_macro_ids",
+    "move_type",
+    "legalization_status",
+    "legalization_failure_reason",
+    "pre_legalization_approx_delta",
+    "post_legalization_approx_delta",
+    "legalization_displacement_max",
+    "legalization_displacement_mean",
 )
 
 
@@ -69,7 +80,15 @@ def export_candidate_rows(
     rows: List[Dict[str, Any]] = []
     for sc in candidates:
         skip_reason: str = sc.metadata.get("skip_reason", "")
-        not_admitted: bool = skip_reason == "m3c_not_admitted"
+        is_m4b: bool = sc.family.startswith("m4b_")
+        not_admitted: bool = skip_reason == "m3c_not_admitted" or (
+            is_m4b
+            and (
+                not sc.valid
+                or sc.duplicate_of is not None
+                or skip_reason == "m4b_budget_exhausted"
+            )
+        )
 
         scored_pool_selectable: bool = (
             sc.valid
@@ -101,7 +120,18 @@ def export_candidate_rows(
                 "scored_pool_selectable": scored_pool_selectable,
                 "selected_via_fallback": selected_via_fallback,
                 "placement_hash": sc.metadata.get("placement_hash"),
-                "source_stage": sc.metadata.get("pass_id"),
+                "source_stage": sc.metadata.get("source_stage", sc.metadata.get("pass_id")),
+                "generated": sc.metadata.get("generated", True),
+                "region_id": sc.metadata.get("region_id"),
+                "region_signature": sc.metadata.get("region_signature"),
+                "moved_macro_ids": sc.metadata.get("moved_macro_ids"),
+                "move_type": sc.metadata.get("move_type"),
+                "legalization_status": sc.metadata.get("legalization_status"),
+                "legalization_failure_reason": sc.metadata.get("legalization_failure_reason"),
+                "pre_legalization_approx_delta": sc.metadata.get("pre_legalization_approx_delta"),
+                "post_legalization_approx_delta": sc.metadata.get("post_legalization_approx_delta"),
+                "legalization_displacement_max": sc.metadata.get("legalization_displacement_max"),
+                "legalization_displacement_mean": sc.metadata.get("legalization_displacement_mean"),
             }
         )
 

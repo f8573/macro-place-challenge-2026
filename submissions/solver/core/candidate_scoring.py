@@ -1546,9 +1546,118 @@ def score_and_select(
 
             scored.extend(m3b_scored_list)
 
+    # --- Pass 6: M4B legalization-aware regional repair ---
+    pass6_scored_count = 0
+    _m4b_reserved_scores = 0
+    _m4b_generated_count = 0
+    _m4b_legalized_count = 0
+    _m4b_legalization_failed_count = 0
+    _m4b_duplicate_after_legalization_count = 0
+    _m4b_admitted_count = 0
+    _m4b_not_admitted_count = 0
+    _m4b_scored_count = 0
+    _m4b_skipped_budget = 0
+    _m4b_raw_legalized_rate = 0.0
+    _m4b_adjusted_legalized_rate = 0.0
+
+    if gen_cfg is not None and getattr(gen_cfg, "m4b_region_repair", False):
+        from submissions.solver.core.m4b_region_repair import (
+            generate_m4b_region_repair_candidates,
+            summarize_m4b_audit_rows,
+        )
+
+        _m4b_reserved_scores = max(0, int(getattr(gen_cfg, "m4b_reserved_scores", 20)))
+
+        _diag_only_set_m4b: set = {"original_legalized"} if raw_original_valid else set()
+        _pre_m4b_valid_scored = [
+            s for s in scored
+            if s.valid and s.proxy_cost is not None and s.was_scored
+            and s.name not in _diag_only_set_m4b
+            and not (_m3a_skipped_budget > 0 and s.family == "m3a_pair_refinement")
+            and not (_m3b_skipped_budget > 0 and s.family == "m3b_cluster_refinement")
+        ]
+
+        if _pre_m4b_valid_scored:
+            _m4b_order_tmp = {sc.name: idx for idx, sc in enumerate(scored)}
+            _m4b_base = min(
+                _pre_m4b_valid_scored,
+                key=lambda s: (float(s.proxy_cost), _m4b_order_tmp.get(s.name, len(scored))),
+            )
+
+            _m4b_grid_dims_raw = getattr(gen_cfg, "m4b_grid_dims", (3, 3))
+            _m4b_grid_dims = (
+                int(_m4b_grid_dims_raw[0]),
+                int(_m4b_grid_dims_raw[1]),
+            )
+            m4b_scored_list, hash_map = generate_m4b_region_repair_candidates(
+                benchmark=benchmark,
+                base_positions=_m4b_base.positions,
+                existing_hashes=hash_map,
+                grid_dims=_m4b_grid_dims,
+                min_macros_per_region=int(getattr(gen_cfg, "m4b_min_macros_per_region", 2)),
+                max_combos_per_region=int(getattr(gen_cfg, "m4b_max_combos_per_region", 16)),
+                legalization_max_displacement_um=float(
+                    getattr(gen_cfg, "m4b_legalization_max_displacement_um", 200.0)
+                ),
+                perturbation_fraction=float(getattr(gen_cfg, "m4b_perturbation_fraction", 0.5)),
+                legalizer_max_rings=cfg.legalizer_max_rings,
+            )
+
+            _pass6_gen_base = len(scored)
+            for local_rank, msc in enumerate(m4b_scored_list):
+                msc.metadata["generation_rank"] = _pass6_gen_base + local_rank
+                msc.metadata["pass_id"] = 6
+
+            m4b_summary = summarize_m4b_audit_rows(m4b_scored_list)
+            _m4b_generated_count = int(m4b_summary["generated_count"])
+            _m4b_legalized_count = int(m4b_summary["legalized_count"])
+            _m4b_legalization_failed_count = int(m4b_summary["legalization_failed_count"])
+            _m4b_duplicate_after_legalization_count = int(
+                m4b_summary["duplicate_after_legalization_count"]
+            )
+            _m4b_raw_legalized_rate = float(m4b_summary["raw_legalized_rate"])
+            _m4b_adjusted_legalized_rate = float(m4b_summary["adjusted_legalized_rate"])
+            total_dup_count += _m4b_duplicate_after_legalization_count
+
+            _m4b_all_valid_indices = [
+                idx for idx, msc in enumerate(m4b_scored_list)
+                if msc.valid and msc.duplicate_of is None
+            ]
+            _m4b_frontier_indices = _m4b_all_valid_indices[:_m4b_reserved_scores]
+            _m4b_outside_frontier = _m4b_all_valid_indices[_m4b_reserved_scores:]
+            _m4b_admitted_count = len(_m4b_frontier_indices)
+            _m4b_not_admitted_count = len(_m4b_outside_frontier)
+            for idx in _m4b_outside_frontier:
+                m4b_scored_list[idx].metadata.setdefault("skip_reason", "m4b_budget_exhausted")
+
+            pass6_scored_count = _score_batch(
+                m4b_scored_list,
+                _m4b_frontier_indices,
+                benchmark,
+                plc,
+                max_scores=_m4b_reserved_scores,
+                already_scored=0,
+                cache=score_cache,
+                benchmark_name=benchmark_name,
+                timing_records=timing_records,
+                timing_names=timing_names,
+                skipped_by_budget_acc=skipped_by_budget_acc,
+                scoring_rank_counter=scoring_rank_counter,
+            )
+
+            for msc in m4b_scored_list:
+                if msc.proxy_cost is not None and raw_original_proxy_cost is not None:
+                    msc.delta_vs_original = msc.proxy_cost - raw_original_proxy_cost
+                if msc.was_scored:
+                    _m4b_scored_count += 1
+                if msc.metadata.get("skip_reason") in {"budget_exceeded", "m4b_budget_exhausted"}:
+                    _m4b_skipped_budget += 1
+
+            scored.extend(m4b_scored_list)
+
     candidates_officially_scored = (
         pass1_scored_count + pass2_scored_count + pass3_scored_count
-        + pass4_scored_count + pass5_scored_count
+        + pass4_scored_count + pass5_scored_count + pass6_scored_count
     )
     fresh_official_scores = candidates_officially_scored  # fresh only (cache hits excluded)
 
@@ -1814,5 +1923,16 @@ def score_and_select(
         m3c_m3b_used=pass5_scored_count,
         m3c_rollover_to_m3b=_m3c_rollover_to_m3b,
         m3c_budget_invariant_holds=_m3c_budget_invariant_holds,
+        m4b_reserved_scores=_m4b_reserved_scores,
+        m4b_generated_count=_m4b_generated_count,
+        m4b_legalized_count=_m4b_legalized_count,
+        m4b_legalization_failed_count=_m4b_legalization_failed_count,
+        m4b_duplicate_after_legalization_count=_m4b_duplicate_after_legalization_count,
+        m4b_admitted_count=_m4b_admitted_count,
+        m4b_not_admitted_count=_m4b_not_admitted_count,
+        m4b_scored_count=_m4b_scored_count,
+        m4b_skipped_budget=_m4b_skipped_budget,
+        m4b_raw_legalized_rate=_m4b_raw_legalized_rate,
+        m4b_adjusted_legalized_rate=_m4b_adjusted_legalized_rate,
     )
     return best, ranked, diagnostics

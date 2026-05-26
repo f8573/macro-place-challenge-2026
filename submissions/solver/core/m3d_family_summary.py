@@ -65,6 +65,21 @@ def summarize_candidate_families(
             if r.get("scored") and r.get("proxy_cost") is not None
         ]
         scored_costs = [r["proxy_cost"] for r in scored_rows]
+        legalized_count = sum(
+            1 for r in group if r.get("legalization_status") == "legalized"
+        )
+        duplicate_after_legalization_count = sum(
+            1
+            for r in group
+            if r.get("legalization_failure_reason") == "duplicate_after_legalization"
+        )
+        legalization_failed_count = sum(
+            1
+            for r in group
+            if r.get("legalization_status") == "failed"
+            or bool(r.get("legalization_failure_reason"))
+        )
+        adjusted_denominator = len(group) - duplicate_after_legalization_count
 
         # Resolve effective final cost: explicit arg > per-(benchmark,profile) inference.
         if final_cost is not None:
@@ -149,6 +164,17 @@ def summarize_candidate_families(
                 "best_candidate_name": best_name,
                 "worst_official_cost": worst_cost,
                 "worst_candidate_name": worst_name,
+                "legalized_count": legalized_count,
+                "legalization_failed_count": legalization_failed_count,
+                "duplicate_after_legalization_count": duplicate_after_legalization_count,
+                "raw_legalized_rate": (
+                    legalized_count / len(group) if len(group) > 0 else 0.0
+                ),
+                "adjusted_legalized_rate": (
+                    legalized_count / adjusted_denominator
+                    if adjusted_denominator > 0
+                    else 0.0
+                ),
             }
         )
 

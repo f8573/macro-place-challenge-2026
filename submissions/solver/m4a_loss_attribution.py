@@ -217,7 +217,7 @@ def weighted_valid_rates(family_effectiveness: list[dict[str, Any]]) -> tuple[fl
         family = row["family"]
         generated = row["generated_count"]
         valid = row["valid_count"]
-        if family.startswith(("m3a_", "m3b_")):
+        if family.startswith(("m3a_", "m3b_", "m4b_")):
             local_generated += generated
             local_valid += valid
         if family.startswith("original"):
@@ -584,12 +584,13 @@ def analyze(
     benchmarks: list[str],
     official_epsilon: float,
     input_dir: Path,
+    input_prefix: str = "m3d",
     runner_json: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     caveats = list(REQUIRED_CAVEATS)
-    benchmark_summary_path = input_dir / "m3d_benchmark_summary.csv"
-    family_summary_path = input_dir / "m3d_family_summary.csv"
-    candidate_effectiveness_path = input_dir / "m3d_candidate_effectiveness.csv"
+    benchmark_summary_path = input_dir / f"{input_prefix}_benchmark_summary.csv"
+    family_summary_path = input_dir / f"{input_prefix}_family_summary.csv"
+    candidate_effectiveness_path = input_dir / f"{input_prefix}_candidate_effectiveness.csv"
 
     benchmark_set = set(benchmarks)
     benchmark_rows = filter_rows(read_csv_rows(benchmark_summary_path), profile, benchmark_set)
@@ -872,6 +873,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--benchmarks", nargs="+", required=True)
     parser.add_argument("--official-epsilon", type=float, default=1e-5)
     parser.add_argument("--input-dir", type=Path, default=Path("analysis/m3d"))
+    parser.add_argument("--input-prefix", default="m3d")
     parser.add_argument(
         "--runner-json",
         type=Path,
@@ -890,6 +892,7 @@ def main(argv: list[str] | None = None) -> int:
         benchmarks=args.benchmarks,
         official_epsilon=args.official_epsilon,
         input_dir=args.input_dir,
+        input_prefix=args.input_prefix,
         runner_json=args.runner_json,
     )
     write_outputs(
