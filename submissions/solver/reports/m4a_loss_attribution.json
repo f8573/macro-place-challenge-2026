@@ -1,0 +1,814 @@
+{
+  "aggregate_recommendation": {
+    "classifications": {
+      "ibm01": "legality_bottleneck",
+      "ibm02": "prefilter_evaluator_disagreement",
+      "ibm03": "legality_bottleneck"
+    },
+    "m4b": "legalization_aware_regional_repair",
+    "note": "Majority classification is legality_bottleneck; scoped dissenters: ibm02.",
+    "outcome": "majority_with_scoped_dissenter"
+  },
+  "benchmarks": {
+    "ibm01": {
+      "budget": {
+        "budget_saturation": 0.9333333333333333,
+        "duplicate_skipped_count": 28,
+        "max_official_scores": 60,
+        "official_scored_count": 56,
+        "per_family_scored_share": {
+          "m3a_pair_refinement": 0.08928571428571429,
+          "m3b_cluster_refinement": 0.017857142857142856,
+          "original": 0.017857142857142856,
+          "original_line_search": 0.10714285714285714,
+          "original_neighborhood": 0.44642857142857145,
+          "original_refinement": 0.32142857142857145
+        },
+        "prefiltered_count": 26
+      },
+      "caveats": [],
+      "classification": "legality_bottleneck",
+      "classification_reasons": [
+        "valid_rate_local=0.0854167 < 0.20",
+        "valid_rate_baseline=1 > 0.80",
+        "delta=7.66516e-05 <= 10*epsilon=0.0001"
+      ],
+      "costs": {
+        "delta": 7.665157318115234e-05,
+        "original_cost": 1.0384976863861084,
+        "relative_delta": 7.381005676372172e-05,
+        "relative_delta_pct": 0.007381005676372172,
+        "selected_cost": 1.0384210348129272
+      },
+      "diversity": {
+        "collision_ratio": 0.0,
+        "diversity_note": "weak evidence - name-set only, not geometry",
+        "most_touched_macros": [
+          {
+            "count": 9,
+            "macro": "m215"
+          },
+          {
+            "count": 8,
+            "macro": "m243"
+          },
+          {
+            "count": 7,
+            "macro": "m117"
+          },
+          {
+            "count": 7,
+            "macro": "m54"
+          },
+          {
+            "count": 6,
+            "macro": "m1"
+          }
+        ],
+        "placement_hash_collisions": 0,
+        "unique_macro_ratio": 0.375,
+        "unique_macros_in_scored": 21
+      },
+      "family_effectiveness": [
+        {
+          "best_evaluator_cost": 1.0384329557418823,
+          "best_evaluator_delta": 1.1920928955078125e-05,
+          "budget_share": 0.08928571428571429,
+          "family": "m3a_pair_refinement",
+          "generated_count": 384,
+          "median_evaluator_cost": 1.0384849309921265,
+          "median_evaluator_delta": 6.389617919921875e-05,
+          "score_rate": 0.125,
+          "scored_count": 5,
+          "selected_count": 0,
+          "valid_count": 40,
+          "valid_rate": 0.10416666666666667
+        },
+        {
+          "best_evaluator_cost": 1.0384210348129272,
+          "best_evaluator_delta": 0.0,
+          "budget_share": 0.017857142857142856,
+          "family": "m3b_cluster_refinement",
+          "generated_count": 96,
+          "median_evaluator_cost": 1.0384210348129272,
+          "median_evaluator_delta": 0.0,
+          "score_rate": 1.0,
+          "scored_count": 1,
+          "selected_count": 1,
+          "valid_count": 1,
+          "valid_rate": 0.010416666666666666
+        },
+        {
+          "best_evaluator_cost": 1.0384976863861084,
+          "best_evaluator_delta": 7.665157318115234e-05,
+          "budget_share": 0.017857142857142856,
+          "family": "original",
+          "generated_count": 2,
+          "median_evaluator_cost": 1.0384976863861084,
+          "median_evaluator_delta": 7.665157318115234e-05,
+          "score_rate": 0.5,
+          "scored_count": 1,
+          "selected_count": 0,
+          "valid_count": 2,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.03843092918396,
+          "best_evaluator_delta": 9.894371032714844e-06,
+          "budget_share": 0.10714285714285714,
+          "family": "original_line_search",
+          "generated_count": 20,
+          "median_evaluator_cost": 1.0890300869941711,
+          "median_evaluator_delta": 0.050609052181243896,
+          "score_rate": 0.3,
+          "scored_count": 6,
+          "selected_count": 0,
+          "valid_count": 20,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.038459300994873,
+          "best_evaluator_delta": 3.826618194580078e-05,
+          "budget_share": 0.44642857142857145,
+          "family": "original_neighborhood",
+          "generated_count": 78,
+          "median_evaluator_cost": 1.1407721042633057,
+          "median_evaluator_delta": 0.10235106945037842,
+          "score_rate": 0.32051282051282054,
+          "scored_count": 25,
+          "selected_count": 0,
+          "valid_count": 78,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.038435459136963,
+          "best_evaluator_delta": 1.4424324035644531e-05,
+          "budget_share": 0.32142857142857145,
+          "family": "original_refinement",
+          "generated_count": 150,
+          "median_evaluator_cost": 1.1304364204406738,
+          "median_evaluator_delta": 0.09201538562774658,
+          "score_rate": 0.12,
+          "scored_count": 18,
+          "selected_count": 0,
+          "valid_count": 150,
+          "valid_rate": 1.0
+        }
+      ],
+      "m4b_recommendation": "legalization_aware_regional_repair",
+      "prefilter_evaluator": {
+        "approx_coverage": 0.875,
+        "guard_fired": false,
+        "guard_reason": null,
+        "spearman_rs": -0.1803755487601738,
+        "top20_inversions": 10,
+        "top5_inversions": 2,
+        "usable_count": 49
+      },
+      "score_band": "epsilon_win",
+      "skip_reasons": {
+        "budget_skip_count": 35,
+        "duplicate_count": 28,
+        "invalid_count": 439,
+        "per_family": [
+          {
+            "budget_skip_count": 35,
+            "duplicate_count": 0,
+            "family": "m3a_pair_refinement",
+            "invalid_count": 344,
+            "prefilter_skip_count": 0,
+            "scored_count": 5,
+            "skip_reason_distribution": {
+              "invalid": 344,
+              "m3c_not_admitted": 35,
+              "scored": 5
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 0,
+            "family": "m3b_cluster_refinement",
+            "invalid_count": 95,
+            "prefilter_skip_count": 0,
+            "scored_count": 1,
+            "skip_reason_distribution": {
+              "invalid": 95,
+              "scored": 1
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 1,
+            "family": "original",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 1,
+            "skip_reason_distribution": {
+              "duplicate": 1,
+              "scored": 1
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 6,
+            "family": "original_line_search",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 6,
+            "skip_reason_distribution": {
+              "budget_exceeded": 1,
+              "duplicate": 6,
+              "line_search_early_stop": 1,
+              "not_scored": 6,
+              "scored": 6
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 0,
+            "family": "original_neighborhood",
+            "invalid_count": 0,
+            "prefilter_skip_count": 26,
+            "scored_count": 25,
+            "skip_reason_distribution": {
+              "budget_exceeded": 27,
+              "prefiltered": 26,
+              "scored": 25
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 21,
+            "family": "original_refinement",
+            "invalid_count": 0,
+            "prefilter_skip_count": 3,
+            "scored_count": 18,
+            "skip_reason_distribution": {
+              "budget_exceeded": 108,
+              "duplicate": 21,
+              "prefiltered": 3,
+              "scored": 18
+            }
+          }
+        ],
+        "prefilter_skip_count": 29,
+        "scored_count": 56,
+        "skip_reason_distribution": {
+          "budget_exceeded": 136,
+          "duplicate": 28,
+          "invalid": 439,
+          "line_search_early_stop": 1,
+          "m3c_not_admitted": 35,
+          "not_scored": 6,
+          "prefiltered": 29,
+          "scored": 56
+        }
+      }
+    },
+    "ibm02": {
+      "budget": {
+        "budget_saturation": 1.0,
+        "duplicate_skipped_count": 16,
+        "max_official_scores": 60,
+        "official_scored_count": 60,
+        "per_family_scored_share": {
+          "m3a_pair_refinement": 0.08333333333333333,
+          "m3b_cluster_refinement": 0.08333333333333333,
+          "original": 0.016666666666666666,
+          "original_line_search": 0.1,
+          "original_neighborhood": 0.4166666666666667,
+          "original_refinement": 0.3
+        },
+        "prefiltered_count": 23
+      },
+      "caveats": [],
+      "classification": "prefilter_evaluator_disagreement",
+      "classification_reasons": [
+        "usable_count=49 >= 20",
+        "approx_coverage=0.816667 >= 0.50",
+        "spearman_rs=-0.242347 < 0.30",
+        "top5_inversions=4 >= 3"
+      ],
+      "costs": {
+        "delta": 0.008222103118896484,
+        "original_cost": 1.5658485889434814,
+        "relative_delta": 0.005250892823835637,
+        "relative_delta_pct": 0.5250892823835637,
+        "selected_cost": 1.557626485824585
+      },
+      "diversity": {
+        "collision_ratio": 0.0,
+        "diversity_note": "weak evidence - name-set only, not geometry",
+        "most_touched_macros": [
+          {
+            "count": 9,
+            "macro": "m51"
+          },
+          {
+            "count": 9,
+            "macro": "m122"
+          },
+          {
+            "count": 8,
+            "macro": "m204"
+          },
+          {
+            "count": 7,
+            "macro": "m108"
+          },
+          {
+            "count": 7,
+            "macro": "m263"
+          }
+        ],
+        "placement_hash_collisions": 0,
+        "unique_macro_ratio": 0.23333333333333334,
+        "unique_macros_in_scored": 14
+      },
+      "family_effectiveness": [
+        {
+          "best_evaluator_cost": 1.5581345558166504,
+          "best_evaluator_delta": 0.0005080699920654297,
+          "budget_share": 0.08333333333333333,
+          "family": "m3a_pair_refinement",
+          "generated_count": 384,
+          "median_evaluator_cost": 1.558417797088623,
+          "median_evaluator_delta": 0.0007913112640380859,
+          "score_rate": 0.13513513513513514,
+          "scored_count": 5,
+          "selected_count": 0,
+          "valid_count": 37,
+          "valid_rate": 0.09635416666666667
+        },
+        {
+          "best_evaluator_cost": 1.557626485824585,
+          "best_evaluator_delta": 0.0,
+          "budget_share": 0.08333333333333333,
+          "family": "m3b_cluster_refinement",
+          "generated_count": 96,
+          "median_evaluator_cost": 1.5582904815673828,
+          "median_evaluator_delta": 0.0006639957427978516,
+          "score_rate": 0.45454545454545453,
+          "scored_count": 5,
+          "selected_count": 1,
+          "valid_count": 11,
+          "valid_rate": 0.11458333333333333
+        },
+        {
+          "best_evaluator_cost": 1.5658485889434814,
+          "best_evaluator_delta": 0.008222103118896484,
+          "budget_share": 0.016666666666666666,
+          "family": "original",
+          "generated_count": 2,
+          "median_evaluator_cost": 1.5658485889434814,
+          "median_evaluator_delta": 0.008222103118896484,
+          "score_rate": 0.5,
+          "scored_count": 1,
+          "selected_count": 0,
+          "valid_count": 2,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.599191665649414,
+          "best_evaluator_delta": 0.0415651798248291,
+          "budget_share": 0.1,
+          "family": "original_line_search",
+          "generated_count": 30,
+          "median_evaluator_cost": 1.6242344975471497,
+          "median_evaluator_delta": 0.0666080117225647,
+          "score_rate": 0.2,
+          "scored_count": 6,
+          "selected_count": 0,
+          "valid_count": 30,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.6077264547348022,
+          "best_evaluator_delta": 0.050099968910217285,
+          "budget_share": 0.4166666666666667,
+          "family": "original_neighborhood",
+          "generated_count": 78,
+          "median_evaluator_cost": 1.6356627941131592,
+          "median_evaluator_delta": 0.07803630828857422,
+          "score_rate": 0.32051282051282054,
+          "scored_count": 25,
+          "selected_count": 0,
+          "valid_count": 78,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.558417558670044,
+          "best_evaluator_delta": 0.0007910728454589844,
+          "budget_share": 0.3,
+          "family": "original_refinement",
+          "generated_count": 149,
+          "median_evaluator_cost": 1.6313661336898804,
+          "median_evaluator_delta": 0.07373964786529541,
+          "score_rate": 0.12080536912751678,
+          "scored_count": 18,
+          "selected_count": 0,
+          "valid_count": 149,
+          "valid_rate": 1.0
+        }
+      ],
+      "m4b_recommendation": "correlation_aware_ranking_or_prefilter_repair",
+      "prefilter_evaluator": {
+        "approx_coverage": 0.8166666666666667,
+        "guard_fired": false,
+        "guard_reason": null,
+        "spearman_rs": -0.2423469387755102,
+        "top20_inversions": 11,
+        "top5_inversions": 4,
+        "usable_count": 49
+      },
+      "score_band": "meaningful_win",
+      "skip_reasons": {
+        "budget_skip_count": 38,
+        "duplicate_count": 16,
+        "invalid_count": 432,
+        "per_family": [
+          {
+            "budget_skip_count": 32,
+            "duplicate_count": 0,
+            "family": "m3a_pair_refinement",
+            "invalid_count": 347,
+            "prefilter_skip_count": 0,
+            "scored_count": 5,
+            "skip_reason_distribution": {
+              "invalid": 347,
+              "m3c_not_admitted": 32,
+              "scored": 5
+            }
+          },
+          {
+            "budget_skip_count": 6,
+            "duplicate_count": 0,
+            "family": "m3b_cluster_refinement",
+            "invalid_count": 85,
+            "prefilter_skip_count": 0,
+            "scored_count": 5,
+            "skip_reason_distribution": {
+              "invalid": 85,
+              "m3c_not_admitted": 6,
+              "scored": 5
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 1,
+            "family": "original",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 1,
+            "skip_reason_distribution": {
+              "duplicate": 1,
+              "scored": 1
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 3,
+            "family": "original_line_search",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 6,
+            "skip_reason_distribution": {
+              "budget_exceeded": 1,
+              "duplicate": 3,
+              "line_search_early_stop": 2,
+              "not_scored": 18,
+              "scored": 6
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 0,
+            "family": "original_neighborhood",
+            "invalid_count": 0,
+            "prefilter_skip_count": 23,
+            "scored_count": 25,
+            "skip_reason_distribution": {
+              "budget_exceeded": 30,
+              "prefiltered": 23,
+              "scored": 25
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 12,
+            "family": "original_refinement",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 18,
+            "skip_reason_distribution": {
+              "budget_exceeded": 119,
+              "duplicate": 12,
+              "scored": 18
+            }
+          }
+        ],
+        "prefilter_skip_count": 23,
+        "scored_count": 60,
+        "skip_reason_distribution": {
+          "budget_exceeded": 150,
+          "duplicate": 16,
+          "invalid": 432,
+          "line_search_early_stop": 2,
+          "m3c_not_admitted": 38,
+          "not_scored": 18,
+          "prefiltered": 23,
+          "scored": 60
+        }
+      }
+    },
+    "ibm03": {
+      "budget": {
+        "budget_saturation": 0.8833333333333333,
+        "duplicate_skipped_count": 21,
+        "max_official_scores": 60,
+        "official_scored_count": 53,
+        "per_family_scored_share": {
+          "m3a_pair_refinement": 0.09433962264150944,
+          "m3b_cluster_refinement": 0.0,
+          "original": 0.018867924528301886,
+          "original_line_search": 0.07547169811320754,
+          "original_neighborhood": 0.4716981132075472,
+          "original_refinement": 0.33962264150943394
+        },
+        "prefiltered_count": 22
+      },
+      "caveats": [
+        "ibm03: secondary signal - Rule B conditions also satisfied (spearman_rs=-0.737743, top5_inversions=5); prefilter disagreement is suppressed by Rule A priority."
+      ],
+      "classification": "legality_bottleneck",
+      "classification_reasons": [
+        "valid_rate_local=0.131783 < 0.20",
+        "valid_rate_baseline=1 > 0.80",
+        "delta=3.02792e-05 <= 10*epsilon=0.0001"
+      ],
+      "costs": {
+        "delta": 3.0279159545898438e-05,
+        "original_cost": 1.3254859447479248,
+        "relative_delta": 2.2843817896278633e-05,
+        "relative_delta_pct": 0.0022843817896278634,
+        "selected_cost": 1.325455665588379
+      },
+      "diversity": {
+        "collision_ratio": 0.0,
+        "diversity_note": "weak evidence - name-set only, not geometry",
+        "most_touched_macros": [
+          {
+            "count": 8,
+            "macro": "m289"
+          },
+          {
+            "count": 8,
+            "macro": "m72"
+          },
+          {
+            "count": 7,
+            "macro": "m224"
+          },
+          {
+            "count": 7,
+            "macro": "m240"
+          },
+          {
+            "count": 6,
+            "macro": "m200"
+          }
+        ],
+        "placement_hash_collisions": 0,
+        "unique_macro_ratio": 0.2830188679245283,
+        "unique_macros_in_scored": 15
+      },
+      "family_effectiveness": [
+        {
+          "best_evaluator_cost": 1.325455665588379,
+          "best_evaluator_delta": 0.0,
+          "budget_share": 0.09433962264150944,
+          "family": "m3a_pair_refinement",
+          "generated_count": 384,
+          "median_evaluator_cost": 1.32613205909729,
+          "median_evaluator_delta": 0.0006763935089111328,
+          "score_rate": 0.09803921568627451,
+          "scored_count": 5,
+          "selected_count": 1,
+          "valid_count": 51,
+          "valid_rate": 0.1328125
+        },
+        {
+          "best_evaluator_cost": null,
+          "best_evaluator_delta": null,
+          "budget_share": 0.0,
+          "family": "m3b_cluster_refinement",
+          "generated_count": 3,
+          "median_evaluator_cost": null,
+          "median_evaluator_delta": null,
+          "score_rate": 0.0,
+          "scored_count": 0,
+          "selected_count": 0,
+          "valid_count": 0,
+          "valid_rate": 0.0
+        },
+        {
+          "best_evaluator_cost": 1.3254859447479248,
+          "best_evaluator_delta": 3.0279159545898438e-05,
+          "budget_share": 0.018867924528301886,
+          "family": "original",
+          "generated_count": 2,
+          "median_evaluator_cost": 1.3254859447479248,
+          "median_evaluator_delta": 3.0279159545898438e-05,
+          "score_rate": 0.5,
+          "scored_count": 1,
+          "selected_count": 0,
+          "valid_count": 2,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.3341861963272095,
+          "best_evaluator_delta": 0.008730530738830566,
+          "budget_share": 0.07547169811320754,
+          "family": "original_line_search",
+          "generated_count": 20,
+          "median_evaluator_cost": 1.340091049671173,
+          "median_evaluator_delta": 0.01463538408279419,
+          "score_rate": 0.2,
+          "scored_count": 4,
+          "selected_count": 0,
+          "valid_count": 20,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.3287794589996338,
+          "best_evaluator_delta": 0.003323793411254883,
+          "budget_share": 0.4716981132075472,
+          "family": "original_neighborhood",
+          "generated_count": 78,
+          "median_evaluator_cost": 1.3584473133087158,
+          "median_evaluator_delta": 0.032991647720336914,
+          "score_rate": 0.32051282051282054,
+          "scored_count": 25,
+          "selected_count": 0,
+          "valid_count": 78,
+          "valid_rate": 1.0
+        },
+        {
+          "best_evaluator_cost": 1.3254570960998535,
+          "best_evaluator_delta": 1.430511474609375e-06,
+          "budget_share": 0.33962264150943394,
+          "family": "original_refinement",
+          "generated_count": 148,
+          "median_evaluator_cost": 1.3559412360191345,
+          "median_evaluator_delta": 0.030485570430755615,
+          "score_rate": 0.12162162162162163,
+          "scored_count": 18,
+          "selected_count": 0,
+          "valid_count": 148,
+          "valid_rate": 1.0
+        }
+      ],
+      "m4b_recommendation": "legalization_aware_regional_repair",
+      "prefilter_evaluator": {
+        "approx_coverage": 0.8867924528301887,
+        "guard_fired": false,
+        "guard_reason": null,
+        "spearman_rs": -0.7377428307123034,
+        "top20_inversions": 14,
+        "top5_inversions": 5,
+        "usable_count": 47
+      },
+      "score_band": "epsilon_win",
+      "skip_reasons": {
+        "budget_skip_count": 46,
+        "duplicate_count": 21,
+        "invalid_count": 336,
+        "per_family": [
+          {
+            "budget_skip_count": 46,
+            "duplicate_count": 0,
+            "family": "m3a_pair_refinement",
+            "invalid_count": 333,
+            "prefilter_skip_count": 0,
+            "scored_count": 5,
+            "skip_reason_distribution": {
+              "invalid": 333,
+              "m3c_not_admitted": 46,
+              "scored": 5
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 0,
+            "family": "m3b_cluster_refinement",
+            "invalid_count": 3,
+            "prefilter_skip_count": 0,
+            "scored_count": 0,
+            "skip_reason_distribution": {
+              "invalid": 3
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 1,
+            "family": "original",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 1,
+            "skip_reason_distribution": {
+              "duplicate": 1,
+              "scored": 1
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 2,
+            "family": "original_line_search",
+            "invalid_count": 0,
+            "prefilter_skip_count": 0,
+            "scored_count": 4,
+            "skip_reason_distribution": {
+              "duplicate": 2,
+              "line_search_early_stop": 2,
+              "not_scored": 12,
+              "scored": 4
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 0,
+            "family": "original_neighborhood",
+            "invalid_count": 0,
+            "prefilter_skip_count": 22,
+            "scored_count": 25,
+            "skip_reason_distribution": {
+              "budget_exceeded": 31,
+              "prefiltered": 22,
+              "scored": 25
+            }
+          },
+          {
+            "budget_skip_count": 0,
+            "duplicate_count": 18,
+            "family": "original_refinement",
+            "invalid_count": 0,
+            "prefilter_skip_count": 16,
+            "scored_count": 18,
+            "skip_reason_distribution": {
+              "budget_exceeded": 96,
+              "duplicate": 18,
+              "prefiltered": 16,
+              "scored": 18
+            }
+          }
+        ],
+        "prefilter_skip_count": 38,
+        "scored_count": 53,
+        "skip_reason_distribution": {
+          "budget_exceeded": 127,
+          "duplicate": 21,
+          "invalid": 336,
+          "line_search_early_stop": 2,
+          "m3c_not_admitted": 46,
+          "not_scored": 12,
+          "prefiltered": 38,
+          "scored": 53
+        }
+      }
+    }
+  },
+  "caveats": [
+    "Cache decomposition is omitted if cache_hits/cache_misses are zero or inactive.",
+    "Candidate name-set diversity is weak evidence and is not a substitute for geometry diversity.",
+    "Geometry not persisted; region, density, per-macro displacement, and per-net HPWL attribution are unsupported by reduced M4A.",
+    "M4A does not inherit M3D's near_local_optimum label; M4A classifications are derived independently from rules A-E.",
+    "approx_delta is absent for m3a/m3b family candidates in current M3D artifacts; prefilter-evaluator disagreement analysis is suppressed when approx_coverage < 0.50.",
+    "best_official_delta_vs_final is relative to the selected final cost, not to original_cost.",
+    "ibm03: secondary signal - Rule B conditions also satisfied (spearman_rs=-0.737743, top5_inversions=5); prefilter disagreement is suppressed by Rule A priority.",
+    "proxy_cost in M3D artifacts is treated as evaluator cost in M4A, not as a separate proxy."
+  ],
+  "inputs": {
+    "benchmark_summary": "analysis\\m3d\\m3d_benchmark_summary.csv",
+    "candidate_effectiveness": "analysis\\m3d\\m3d_candidate_effectiveness.csv",
+    "family_summary": "analysis\\m3d\\m3d_family_summary.csv",
+    "runner_json": "submissions\\solver\\artifacts\\run_m3c-default.json"
+  },
+  "official_epsilon": 1e-05,
+  "profile": "m3c-default",
+  "supported_diagnostics": [
+    "score_banding",
+    "family_effectiveness",
+    "skip_reason_aggregation",
+    "budget_use",
+    "approx_prefilter_vs_evaluator",
+    "candidate_name_set_diversity"
+  ],
+  "unsupported_diagnostics": [
+    "region_attribution",
+    "density_hotspots",
+    "top_macro_contributor",
+    "top_net_contributor",
+    "topology_lock_proof",
+    "legalization_displacement"
+  ]
+}
