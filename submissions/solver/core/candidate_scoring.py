@@ -31,6 +31,7 @@ from submissions.solver.core.candidate_types import (
     ScoringDiagnostics,
 )
 from submissions.solver.core.diagnostics import check_placement
+from submissions.solver.core.m4d_family_normalization import build_m4d_telemetry
 from submissions.solver.legalization.greedy_legalizer import LegalizationResult, legalize
 
 
@@ -295,6 +296,29 @@ def _prefilter_score_set(
         scored[idx].metadata.setdefault("skip_reason", "prefiltered")
 
     return score_indices, prefiltered, improving_count, best_skipped
+
+
+def _apply_m4d_telemetry(candidates: List[ScoredCandidate]) -> None:
+    """Populate M4D telemetry metadata in-place for the supplied candidates."""
+    rows = [
+        {
+            "candidate_name": sc.name,
+            "family": sc.family,
+            "approx_delta": sc.metadata.get("approx_hpwl_delta"),
+            "generation_rank": sc.metadata.get("generation_rank", idx),
+            "fifo_index": sc.metadata.get("generation_rank", idx),
+        }
+        for idx, sc in enumerate(candidates)
+    ]
+    build_m4d_telemetry(rows)
+    for sc, row in zip(candidates, rows):
+        for key in (
+            "m4d_rank_score",
+            "m4d_family_normalized_approx_delta",
+            "m4d_cross_family_rank",
+            "m4d_rank_reason",
+        ):
+            sc.metadata[key] = row.get(key)
 
 
 def _score_batch(
@@ -925,6 +949,8 @@ def score_and_select(
 
     pass1_dup_count, hash_map = _mark_duplicates(scored, enable_hash_cache=cfg.enable_hash_cache)
     score_indices, prefiltered_count, improving_count, best_skipped_delta = _prefilter_score_set(scored, cfg)
+    if gen_cfg is not None and getattr(gen_cfg, "m4d_family_normalization", False):
+        _apply_m4d_telemetry(scored)
 
     # Sort pass-1 candidates: originals first, then improving neighborhood best-first
     # (most negative approx_hpwl_delta), then global families, then exploratory positives.
@@ -939,9 +965,17 @@ def score_and_select(
         if sc.family != "original_neighborhood" or approx is None or not math.isfinite(float(approx)):
             return (1, 0.0, idx)  # global families: score right after originals
         approx_f = float(approx)
+        rank_score = sc.metadata.get("m4d_rank_score")
+        approx_key = (
+            float(rank_score)
+            if gen_cfg is not None
+            and getattr(gen_cfg, "m4d_family_normalization", False)
+            and isinstance(rank_score, (int, float))
+            else approx_f
+        )
         if approx_f <= 1e-9:
-            return (2, approx_f, idx)  # improving: best (most negative) first
-        return (3, approx_f, idx)  # exploratory positives: ascending delta
+            return (2, approx_key, idx)  # improving: best rank first
+        return (3, approx_key, idx)  # exploratory positives: ascending rank
 
     sorted_pass1_indices = sorted(score_indices, key=_pass1_sort_key)
 
@@ -1032,6 +1066,8 @@ def score_and_select(
                 ref_scored, enable_hash_cache=cfg.enable_hash_cache, existing_hashes=hash_map
             )
             total_dup_count += pass2_dup_count
+            if getattr(gen_cfg, "m4d_family_normalization", False):
+                _apply_m4d_telemetry(ref_scored)
 
             # Build per-seed queues so budget is distributed across all seed macros.
             # Without this, generation order (seed 1 first) would let the first seed
@@ -1053,13 +1089,20 @@ def score_and_select(
                 has_valid_approx = isinstance(approx, float) and math.isfinite(approx)
                 is_improving = has_valid_approx and float(approx) <= 1e-9
                 approx_f = float(approx) if has_valid_approx else 0.0
+                rank_score = rsc.metadata.get("m4d_rank_score")
+                approx_key = (
+                    float(rank_score)
+                    if getattr(gen_cfg, "m4d_family_normalization", False)
+                    and isinstance(rank_score, (int, float))
+                    else approx_f
+                )
                 if prelegal_bad:
                     # Prelegal overlap: include but score after valid-improving candidates.
                     # Approx is computed at pre-legalization (overlapping) position and is
                     # unreliable; tier 1 keeps it from pre-empting scale1.5x/2x candidates.
-                    sort_key = (1, approx_f, idx)
+                    sort_key = (1, approx_key, idx)
                 elif is_improving:
-                    sort_key = (0, approx_f, idx)
+                    sort_key = (0, approx_key, idx)
                 elif not has_valid_approx:
                     sort_key = (2, 0.0, idx)
                 else:
@@ -1748,6 +1791,11 @@ def score_and_select(
                 or _m3c_pre_m3_fresh_total <= _m3c_pre_m3_alloc
             )
         )
+
+    # Final telemetry refresh: updates m4d_* metadata for CSV export only;
+    # admission order was already determined by the pass-1 and pass-2 calls above.
+    if gen_cfg is not None and getattr(gen_cfg, "m4d_family_normalization", False):
+        _apply_m4d_telemetry(scored)
 
     # --- Post-process: ensure all unscored candidates have a skip_reason ---
     for sc in scored:

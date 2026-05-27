@@ -63,6 +63,9 @@ class CandidateGenerationConfig:
     m4c_exploration: int = 4
     m4c_max_per_region: Optional[int] = None
     m4c_known_winners: List[str] = field(default_factory=list)
+    # M4D pass: family-normalized cross-family telemetry/order for pre-M3 approx families.
+    m4d_family_normalization: bool = False
+    m4d_family_quota_floors: Optional[Dict[str, int]] = None
 
 
 @dataclass(frozen=True)

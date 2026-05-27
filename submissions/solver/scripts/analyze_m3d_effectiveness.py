@@ -512,6 +512,8 @@ def main() -> None:
         m4c_exploration=profile.get("m4c_exploration", 4),
         m4c_max_per_region=profile.get("m4c_max_per_region", None),
         m4c_known_winners=profile.get("m4c_known_winners", []),
+        m4d_family_normalization=profile.get("m4d_family_normalization", False),
+        m4d_family_quota_floors=profile.get("m4d_family_quota_floors", None),
     )
     max_scores = (
         args.max_official_scores

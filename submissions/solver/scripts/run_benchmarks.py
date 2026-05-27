@@ -494,6 +494,13 @@ _PROFILES: Dict[str, Dict] = {
     },
 }
 
+_PROFILES["m4d-default"] = {
+    **_PROFILES["m4c-default"],
+    "description": "M4D default: M4C baseline plus family-normalized pre-M3 admission telemetry",
+    "m4d_family_normalization": True,
+    "m4d_family_quota_floors": None,
+}
+
 
 def _discover_benchmarks(names: Optional[List[str]]) -> List[Path]:
     if names is not None:
@@ -940,6 +947,8 @@ def run_profile(
         m4c_exploration=profile.get("m4c_exploration", 4),
         m4c_max_per_region=profile.get("m4c_max_per_region", None),
         m4c_known_winners=profile.get("m4c_known_winners", []),
+        m4d_family_normalization=profile.get("m4d_family_normalization", False),
+        m4d_family_quota_floors=profile.get("m4d_family_quota_floors", None),
     )
     score_cfg = scoring_config or CandidateScoringConfig(
         max_official_scores=profile.get("max_official_scores"),
@@ -1129,6 +1138,8 @@ def main():
         m4c_exploration=profile.get("m4c_exploration", 4),
         m4c_max_per_region=profile.get("m4c_max_per_region", None),
         m4c_known_winners=profile.get("m4c_known_winners", []),
+        m4d_family_normalization=profile.get("m4d_family_normalization", False),
+        m4d_family_quota_floors=profile.get("m4d_family_quota_floors", None),
     )
     score_cfg = CandidateScoringConfig(
         max_official_scores=args.max_official_scores if args.max_official_scores is not None else profile.get("max_official_scores"),

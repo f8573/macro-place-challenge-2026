@@ -562,6 +562,17 @@ def test_m3c_disabled_behavior_unchanged():
     )
 
 
+def test_m4d_default_budget_allocation_invariant():
+    from submissions.solver.scripts.run_benchmarks import _PROFILES
+
+    profile = _PROFILES["m4d-default"]
+    assert profile["max_official_scores"] == 80
+    assert profile["m3c_pre_m3_budget"] == 50
+    assert profile["m3c_m3a_reserved_budget"] == 5
+    assert profile["m3c_m3b_reserved_budget"] == 5
+    assert profile["m4b_reserved_scores"] == 20
+
+
 # ---------------------------------------------------------------------------
 # Regression: outside-frontier candidates must not cause family exclusion
 # ---------------------------------------------------------------------------

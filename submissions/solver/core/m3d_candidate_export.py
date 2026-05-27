@@ -44,6 +44,10 @@ _REQUIRED_FIELDS = (
     "m4c_rank_reason",
     "family_rank",
     "family_normalized_approx_delta",
+    "m4d_rank_score",
+    "m4d_family_normalized_approx_delta",
+    "m4d_cross_family_rank",
+    "m4d_rank_reason",
 )
 
 
@@ -142,6 +146,10 @@ def export_candidate_rows(
                 "m4c_rank_reason": sc.metadata.get("m4c_rank_reason"),
                 "family_rank": sc.metadata.get("family_rank"),
                 "family_normalized_approx_delta": sc.metadata.get("family_normalized_approx_delta"),
+                "m4d_rank_score": sc.metadata.get("m4d_rank_score"),
+                "m4d_family_normalized_approx_delta": sc.metadata.get("m4d_family_normalized_approx_delta"),
+                "m4d_cross_family_rank": sc.metadata.get("m4d_cross_family_rank"),
+                "m4d_rank_reason": sc.metadata.get("m4d_rank_reason"),
             }
         )
 
