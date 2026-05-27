@@ -57,6 +57,12 @@ class CandidateGenerationConfig:
     m4b_max_combos_per_region: int = 16
     m4b_legalization_max_displacement_um: float = 200.0
     m4b_perturbation_fraction: float = 0.5
+    # M4C pass: ranking-only ordering hook inside the M4B reserved bucket.
+    m4c_ranking: bool = False
+    m4c_k_ranked: int = 16
+    m4c_exploration: int = 4
+    m4c_max_per_region: Optional[int] = None
+    m4c_known_winners: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

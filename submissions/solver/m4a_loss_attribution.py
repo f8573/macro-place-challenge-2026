@@ -322,8 +322,10 @@ def build_budget(
     }
 
 
-def _rank_maps(usable: list[dict[str, Any]]) -> tuple[dict[str, float], dict[str, float]]:
-    approx_values = [row["approx_delta"] for row in usable]
+def _rank_maps(
+    usable: list[dict[str, Any]], rank_column: str = "approx_delta"
+) -> tuple[dict[str, float], dict[str, float]]:
+    approx_values = [row[rank_column] for row in usable]
     evaluator_values = [row["evaluator_cost"] for row in usable]
     approx_ranks = ranks(approx_values)
     evaluator_ranks = ranks(evaluator_values)
@@ -333,7 +335,10 @@ def _rank_maps(usable: list[dict[str, Any]]) -> tuple[dict[str, float], dict[str
 
 
 def build_prefilter_evaluator(
-    candidate_rows: list[dict[str, str]], benchmark: str, scored_count: int
+    candidate_rows: list[dict[str, str]],
+    benchmark: str,
+    scored_count: int,
+    rank_column: str = "approx_delta",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     scored_rows = [
         row
@@ -343,16 +348,16 @@ def build_prefilter_evaluator(
     total_scored = scored_count if scored_count > 0 else len(scored_rows)
     usable = []
     for row in scored_rows:
-        approx_delta = parse_float(row.get("approx_delta"))
+        rank_value = parse_float(row.get(rank_column))
         evaluator_cost = parse_float(row.get("proxy_cost"))
-        if approx_delta is None or evaluator_cost is None:
+        if rank_value is None or evaluator_cost is None:
             continue
         usable.append(
             {
                 "benchmark": benchmark,
                 "candidate_name": row.get("candidate_name", ""),
                 "family": row.get("family", ""),
-                "approx_delta": approx_delta,
+                rank_column: rank_value,
                 "evaluator_cost": evaluator_cost,
             }
         )
@@ -368,7 +373,7 @@ def build_prefilter_evaluator(
     approx_rank_by_name: dict[str, float] = {}
     evaluator_rank_by_name: dict[str, float] = {}
     if usable:
-        approx_rank_by_name, evaluator_rank_by_name = _rank_maps(usable)
+        approx_rank_by_name, evaluator_rank_by_name = _rank_maps(usable, rank_column)
 
     csv_rows = []
     for row in scored_rows:
@@ -379,6 +384,8 @@ def build_prefilter_evaluator(
                 "candidate_name": name,
                 "family": row.get("family", ""),
                 "approx_delta": parse_float(row.get("approx_delta")),
+                "rank_column": rank_column,
+                "rank_value": parse_float(row.get(rank_column)),
                 "evaluator_cost": parse_float(row.get("proxy_cost")),
                 "approx_rank": approx_rank_by_name.get(name),
                 "evaluator_rank": evaluator_rank_by_name.get(name),
@@ -389,7 +396,7 @@ def build_prefilter_evaluator(
     top5_inversions = None
     top20_inversions = None
     if not guard_fired:
-        approx_values = [row["approx_delta"] for row in usable]
+        approx_values = [row[rank_column] for row in usable]
         evaluator_values = [row["evaluator_cost"] for row in usable]
         spearman_rs = spearman(approx_values, evaluator_values)
         top5_inversions = count_topk_inversions(usable, approx_rank_by_name, 5)
@@ -397,6 +404,7 @@ def build_prefilter_evaluator(
 
     return (
         {
+            "rank_column": rank_column,
             "usable_count": len(usable),
             "approx_coverage": approx_coverage,
             "guard_fired": guard_fired,
@@ -586,6 +594,7 @@ def analyze(
     input_dir: Path,
     input_prefix: str = "m3d",
     runner_json: Path,
+    rank_column: str = "approx_delta",
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     caveats = list(REQUIRED_CAVEATS)
     benchmark_summary_path = input_dir / f"{input_prefix}_benchmark_summary.csv"
@@ -640,8 +649,19 @@ def analyze(
         skip_reasons = aggregate_skip_reasons(candidate_rows, benchmark, caveats)
         budget = build_budget(runner_result, family_effectiveness)
         prefilter_evaluator, rows_for_prefilter_csv = build_prefilter_evaluator(
-            candidate_rows, benchmark, budget["official_scored_count"]
+            candidate_rows,
+            benchmark,
+            budget["official_scored_count"],
+            rank_column="approx_delta",
         )
+        rank_column_prefilter_evaluator = None
+        if rank_column != "approx_delta":
+            rank_column_prefilter_evaluator, rows_for_prefilter_csv = build_prefilter_evaluator(
+                candidate_rows,
+                benchmark,
+                budget["official_scored_count"],
+                rank_column=rank_column,
+            )
         prefilter_csv_rows.extend(rows_for_prefilter_csv)
         diversity = build_diversity(candidate_rows, benchmark, budget["official_scored_count"])
         classification, classification_reasons = classify_benchmark(
@@ -675,6 +695,7 @@ def analyze(
             "skip_reasons": skip_reasons,
             "budget": budget,
             "prefilter_evaluator": prefilter_evaluator,
+            "rank_column_prefilter_evaluator": rank_column_prefilter_evaluator,
             "diversity": diversity,
             "classification": classification,
             "classification_reasons": classification_reasons,
@@ -689,6 +710,7 @@ def analyze(
     result = {
         "profile": profile,
         "official_epsilon": official_epsilon,
+        "rank_column": rank_column,
         "inputs": {
             "benchmark_summary": str(benchmark_summary_path),
             "family_summary": str(family_summary_path),
@@ -754,6 +776,8 @@ def write_outputs(
             "family",
             "approx_delta",
             "evaluator_cost",
+            "rank_column",
+            "rank_value",
             "approx_rank",
             "evaluator_rank",
         ],
@@ -774,6 +798,7 @@ def render_markdown_report(result: dict[str, Any]) -> str:
         "",
         f"Profile: `{result['profile']}`",
         f"Official epsilon: `{result['official_epsilon']}`",
+        f"Rank column: `{result.get('rank_column', 'approx_delta')}`",
         "",
         "## Inputs",
         "",
@@ -816,6 +841,7 @@ def render_markdown_report(result: dict[str, Any]) -> str:
         costs = data["costs"]
         budget = data["budget"]
         prefilter = data["prefilter_evaluator"]
+        rank_prefilter = data.get("rank_column_prefilter_evaluator")
         diversity = data["diversity"]
         lines.extend(
             [
@@ -845,6 +871,15 @@ def render_markdown_report(result: dict[str, Any]) -> str:
                 "Classification reasons:",
             ]
         )
+        if rank_prefilter is not None:
+            lines.extend(
+                [
+                    f"- {rank_prefilter['rank_column']} vs evaluator usable_count: `{rank_prefilter['usable_count']}`",
+                    f"- {rank_prefilter['rank_column']} vs evaluator approx_coverage: `{fmt(rank_prefilter['approx_coverage'])}`",
+                    f"- {rank_prefilter['rank_column']} vs evaluator spearman_rs: `{fmt(rank_prefilter['spearman_rs'])}`",
+                    f"- {rank_prefilter['rank_column']} vs evaluator top5_inversions: `{fmt(rank_prefilter['top5_inversions'])}`",
+                ]
+            )
         for reason in data["classification_reasons"]:
             lines.append(f"- {reason}")
         lines.append("")
@@ -874,6 +909,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--official-epsilon", type=float, default=1e-5)
     parser.add_argument("--input-dir", type=Path, default=Path("analysis/m3d"))
     parser.add_argument("--input-prefix", default="m3d")
+    parser.add_argument("--rank-column", default="approx_delta")
     parser.add_argument(
         "--runner-json",
         type=Path,
@@ -894,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
         input_dir=args.input_dir,
         input_prefix=args.input_prefix,
         runner_json=args.runner_json,
+        rank_column=args.rank_column,
     )
     write_outputs(
         output_dir=args.output_dir,

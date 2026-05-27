@@ -307,6 +307,7 @@ def _write_m4a_input_fixture(input_dir: Path, prefix: str, profile: str) -> None
                 "skip_reason",
                 "proxy_cost",
                 "approx_delta",
+                "m4c_rank_score",
                 "placement_hash",
             ],
         )
@@ -325,6 +326,7 @@ def _write_m4a_input_fixture(input_dir: Path, prefix: str, profile: str) -> None
                 "skip_reason": "scored",
                 "proxy_cost": "0.95",
                 "approx_delta": "-0.1",
+                "m4c_rank_score": "0.0",
                 "placement_hash": "abc12345",
             }
         )
@@ -355,6 +357,90 @@ def test_input_prefix_m4b_reads_m4b_files(tmp_path):
     )
     assert result["inputs"]["candidate_effectiveness"].endswith("m4b_candidate_effectiveness.csv")
     assert result["benchmarks"]["ibm01"]["family_effectiveness"][0]["family"] == "m4b_region_repair"
+
+
+def test_rank_column_default_is_approx_delta():
+    parser = m4a.build_arg_parser()
+    args = parser.parse_args(
+        [
+            "--profile",
+            "fixture",
+            "--benchmarks",
+            "ibm01",
+            "--runner-json",
+            "missing.json",
+        ]
+    )
+    assert args.rank_column == "approx_delta"
+
+
+def test_rank_column_m4c_rank_score_changes_diagnostics_without_changing_schema(tmp_path):
+    input_dir = tmp_path / "inputs"
+    _write_m4a_input_fixture(input_dir, "m4c", "m4c-default")
+    candidate_path = input_dir / "m4c_candidate_effectiveness.csv"
+    rows = list(csv.DictReader(candidate_path.open(newline="", encoding="utf-8")))
+    rows.extend(
+        [
+            {
+                **rows[0],
+                "candidate_name": f"m4b_r0_m{i}_m{i + 1}_spread",
+                "proxy_cost": str(1.0 + i * 0.01),
+                "approx_delta": str(i),
+                "m4c_rank_score": str(30 - i),
+                "placement_hash": f"hash{i:02d}",
+            }
+            for i in range(30)
+        ]
+    )
+    with candidate_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+
+    canonical, _, _ = m4a.analyze(
+        profile="m4c-default",
+        benchmarks=["ibm01"],
+        official_epsilon=1e-5,
+        input_dir=input_dir,
+        input_prefix="m4c",
+        runner_json=tmp_path / "missing.json",
+    )
+    diagnostic, _, _ = m4a.analyze(
+        profile="m4c-default",
+        benchmarks=["ibm01"],
+        official_epsilon=1e-5,
+        input_dir=input_dir,
+        input_prefix="m4c",
+        runner_json=tmp_path / "missing.json",
+        rank_column="m4c_rank_score",
+    )
+
+    bench_canonical = canonical["benchmarks"]["ibm01"]
+    bench_diagnostic = diagnostic["benchmarks"]["ibm01"]
+    assert bench_diagnostic["costs"] == bench_canonical["costs"]
+    assert bench_diagnostic["score_band"] == bench_canonical["score_band"]
+    assert bench_diagnostic["classification"] == bench_canonical["classification"]
+    assert bench_diagnostic["prefilter_evaluator"]["rank_column"] == "approx_delta"
+    assert bench_diagnostic["rank_column_prefilter_evaluator"]["rank_column"] == "m4c_rank_score"
+    assert (
+        bench_diagnostic["rank_column_prefilter_evaluator"]["spearman_rs"]
+        != bench_diagnostic["prefilter_evaluator"]["spearman_rs"]
+    )
+
+
+def test_input_prefix_m4c_reads_m4c_files(tmp_path):
+    _write_m4a_input_fixture(tmp_path, "m4c", "m4c-default")
+    result, _, _ = m4a.analyze(
+        profile="m4c-default",
+        benchmarks=["ibm01"],
+        official_epsilon=1e-5,
+        input_dir=tmp_path,
+        input_prefix="m4c",
+        runner_json=tmp_path / "missing.json",
+        rank_column="m4c_rank_score",
+    )
+    assert result["inputs"]["candidate_effectiveness"].endswith("m4c_candidate_effectiveness.csv")
+    assert result["rank_column"] == "m4c_rank_score"
 
 
 def test_m4b_family_contributes_to_valid_rate_local():

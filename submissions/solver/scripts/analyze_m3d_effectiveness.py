@@ -507,6 +507,11 @@ def main() -> None:
         m4b_max_combos_per_region=profile.get("m4b_max_combos_per_region", 16),
         m4b_legalization_max_displacement_um=profile.get("m4b_legalization_max_displacement_um", 200.0),
         m4b_perturbation_fraction=profile.get("m4b_perturbation_fraction", 0.5),
+        m4c_ranking=profile.get("m4c_ranking", False),
+        m4c_k_ranked=profile.get("m4c_k_ranked", 16),
+        m4c_exploration=profile.get("m4c_exploration", 4),
+        m4c_max_per_region=profile.get("m4c_max_per_region", None),
+        m4c_known_winners=profile.get("m4c_known_winners", []),
     )
     max_scores = (
         args.max_official_scores

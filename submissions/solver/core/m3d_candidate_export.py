@@ -39,6 +39,11 @@ _REQUIRED_FIELDS = (
     "post_legalization_approx_delta",
     "legalization_displacement_max",
     "legalization_displacement_mean",
+    "m4c_rank_score",
+    "m4c_rank_bucket",
+    "m4c_rank_reason",
+    "family_rank",
+    "family_normalized_approx_delta",
 )
 
 
@@ -86,7 +91,7 @@ def export_candidate_rows(
             and (
                 not sc.valid
                 or sc.duplicate_of is not None
-                or skip_reason == "m4b_budget_exhausted"
+                or skip_reason in {"m4b_budget_exhausted", "m4c_budget_exhausted"}
             )
         )
 
@@ -132,6 +137,11 @@ def export_candidate_rows(
                 "post_legalization_approx_delta": sc.metadata.get("post_legalization_approx_delta"),
                 "legalization_displacement_max": sc.metadata.get("legalization_displacement_max"),
                 "legalization_displacement_mean": sc.metadata.get("legalization_displacement_mean"),
+                "m4c_rank_score": sc.metadata.get("m4c_rank_score"),
+                "m4c_rank_bucket": sc.metadata.get("m4c_rank_bucket"),
+                "m4c_rank_reason": sc.metadata.get("m4c_rank_reason"),
+                "family_rank": sc.metadata.get("family_rank"),
+                "family_normalized_approx_delta": sc.metadata.get("family_normalized_approx_delta"),
             }
         )
 

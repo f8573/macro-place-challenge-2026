@@ -146,7 +146,10 @@ def summarize_candidate_families(
                 "not_admitted_count": sum(1 for r in group if r.get("not_admitted")),
                 "scored_count": len(scored_rows),
                 "skipped_budget_count": sum(
-                    1 for r in group if r.get("skip_reason") == "budget_exceeded"
+                    1
+                    for r in group
+                    if r.get("skip_reason")
+                    in {"budget_exceeded", "m4b_budget_exhausted", "m4c_budget_exhausted"}
                 ),
                 "scored_pool_selectable_count": sum(
                     1 for r in group if r.get("scored_pool_selectable")

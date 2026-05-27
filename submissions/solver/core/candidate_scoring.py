@@ -1623,12 +1623,83 @@ def score_and_select(
                 idx for idx, msc in enumerate(m4b_scored_list)
                 if msc.valid and msc.duplicate_of is None
             ]
-            _m4b_frontier_indices = _m4b_all_valid_indices[:_m4b_reserved_scores]
-            _m4b_outside_frontier = _m4b_all_valid_indices[_m4b_reserved_scores:]
+            if getattr(gen_cfg, "m4c_ranking", False):
+                from submissions.solver.core.m4c_ranking import assign_buckets
+
+                _m4c_rows = []
+                for idx, msc in enumerate(m4b_scored_list):
+                    _m4c_rows.append(
+                        {
+                            "candidate_name": msc.name,
+                            "family": msc.family,
+                            "valid": msc.valid,
+                            "duplicate": msc.duplicate_of is not None,
+                            "post_legalization_approx_delta": msc.metadata.get(
+                                "post_legalization_approx_delta"
+                            ),
+                            "fifo_index": idx,
+                            "generation_rank": msc.metadata.get("generation_rank", idx),
+                            "region_id": msc.metadata.get("region_id"),
+                            "move_type": msc.metadata.get("move_type"),
+                        }
+                    )
+                assign_buckets(
+                    _m4c_rows,
+                    k_ranked=int(getattr(gen_cfg, "m4c_k_ranked", 16)),
+                    exploration=int(getattr(gen_cfg, "m4c_exploration", 4)),
+                    max_per_region=getattr(gen_cfg, "m4c_max_per_region", None),
+                    known_winners=list(getattr(gen_cfg, "m4c_known_winners", []) or []),
+                )
+                for idx, row in enumerate(_m4c_rows):
+                    for key in (
+                        "m4c_rank_score",
+                        "m4c_rank_bucket",
+                        "m4c_rank_reason",
+                        "family_rank",
+                        "family_normalized_approx_delta",
+                    ):
+                        m4b_scored_list[idx].metadata[key] = row.get(key)
+
+                _m4b_ranked_indices = [
+                    idx
+                    for idx in _m4b_all_valid_indices
+                    if m4b_scored_list[idx].metadata.get("m4c_rank_bucket") == "ranked"
+                ]
+                _m4b_exploration_indices = [
+                    idx
+                    for idx in _m4b_all_valid_indices
+                    if m4b_scored_list[idx].metadata.get("m4c_rank_bucket") == "exploration"
+                ]
+                _m4b_ranked_indices.sort(
+                    key=lambda idx: (
+                        m4b_scored_list[idx].metadata.get("family_rank") or 10**9,
+                        m4b_scored_list[idx].metadata.get("generation_rank", idx),
+                        m4b_scored_list[idx].name,
+                    )
+                )
+                _m4b_exploration_indices.sort(
+                    key=lambda idx: (
+                        m4b_scored_list[idx].metadata.get("generation_rank", idx),
+                        m4b_scored_list[idx].name,
+                    )
+                )
+                _m4b_frontier_indices = _m4b_ranked_indices + _m4b_exploration_indices
+                _m4b_outside_frontier = [
+                    idx
+                    for idx in _m4b_all_valid_indices
+                    if idx not in set(_m4b_frontier_indices)
+                ]
+                for idx in _m4b_outside_frontier:
+                    m4b_scored_list[idx].metadata.setdefault(
+                        "skip_reason", "m4c_budget_exhausted"
+                    )
+            else:
+                _m4b_frontier_indices = _m4b_all_valid_indices[:_m4b_reserved_scores]
+                _m4b_outside_frontier = _m4b_all_valid_indices[_m4b_reserved_scores:]
+                for idx in _m4b_outside_frontier:
+                    m4b_scored_list[idx].metadata.setdefault("skip_reason", "m4b_budget_exhausted")
             _m4b_admitted_count = len(_m4b_frontier_indices)
             _m4b_not_admitted_count = len(_m4b_outside_frontier)
-            for idx in _m4b_outside_frontier:
-                m4b_scored_list[idx].metadata.setdefault("skip_reason", "m4b_budget_exhausted")
 
             pass6_scored_count = _score_batch(
                 m4b_scored_list,
@@ -1650,7 +1721,11 @@ def score_and_select(
                     msc.delta_vs_original = msc.proxy_cost - raw_original_proxy_cost
                 if msc.was_scored:
                     _m4b_scored_count += 1
-                if msc.metadata.get("skip_reason") in {"budget_exceeded", "m4b_budget_exhausted"}:
+                if msc.metadata.get("skip_reason") in {
+                    "budget_exceeded",
+                    "m4b_budget_exhausted",
+                    "m4c_budget_exhausted",
+                }:
                     _m4b_skipped_budget += 1
 
             scored.extend(m4b_scored_list)
