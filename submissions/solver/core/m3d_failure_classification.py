@@ -18,7 +18,9 @@ late-stage counts at zero (typically ``late_stage_not_scored``).
 
 from typing import Any, Dict, List, Optional, Tuple
 
-_LATE_STAGE_FAMILIES = frozenset({"m3a_pair_refinement", "m3b_cluster_refinement"})
+_LATE_STAGE_FAMILIES = frozenset(
+    {"m3a_pair_refinement", "m3b_cluster_refinement", "m4b_region_repair"}
+)
 
 _RECOMMENDED_NEXT_STEPS: Dict[str, str] = {
     "late_stage_not_scored": "inspect M3C admission/scoring budget",
